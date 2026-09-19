@@ -134,21 +134,23 @@ python -m venv .venv
 
 ## 四、界面预览
 
-`scripts/render_preview.py` 可以随时把主窗口渲染成图片用于走查：
+**主窗口**——左：名单；中：座位表；右：规则面板（42 人班级）
 
-| 文件 | 内容 |
-|---|---|
-| `docs/preview/main_window.png` | 42 人班级的完整界面（左：名单；中：座位表；右：规则面板） |
-| `docs/preview/seat_grid.png` | 座位表特写：讲台、过道、标签色条、姓名 + 学号后 4 位 |
-| `docs/preview/conflict_state.png` | 冲突高亮：红框 + 浅红底 + 右上角 ⚠ |
-| `docs/preview/student_panel.png` | 左侧名单面板特写：搜索 / 标签筛选 / 表格 / 底部按钮 |
+![主窗口](docs/preview/main_window.png)
 
-生成命令：
+**座位表特写**——讲台、过道、标签色条、姓名 + 学号后 4 位
 
-```powershell
-.venv\Scripts\python.exe scripts\render_preview.py
-.venv\Scripts\python.exe scripts\grab_student_panel.py
-```
+![座位表特写](docs/preview/seat_grid.png)
+
+**冲突高亮**——红框 + 浅红底 + 右上角 ⚠
+
+![冲突高亮](docs/preview/conflict_state.png)
+
+**左侧名单面板**——搜索 / 标签筛选 / 表格 / 底部按钮
+
+![名单面板](docs/preview/student_panel.png)
+
+> 以上图片由 `scripts/render_preview.py` 与 `scripts/grab_student_panel.py` 生成，改完界面可随时重新渲染。
 
 ---
 
