@@ -77,6 +77,7 @@ class MainWindow(QMainWindow):
         self._last_solution = None
         self._pending_rotation_preview: Optional[RotationPlan] = None
         self._suppress_events = False
+        self._syncing_view = False
 
         self.setWindowTitle(config.APP_NAME)
         self.setMinimumSize(1100, 720)
@@ -98,7 +99,9 @@ class MainWindow(QMainWindow):
         self._autosave_timer.start()
 
         self._restore_settings()
+        self._restore_last_project()
         self._refresh_all()
+        self._sync_view_actions()
         QTimer.singleShot(200, self._maybe_recover)
         QTimer.singleShot(400, self._maybe_welcome)
 
@@ -1082,6 +1085,7 @@ class MainWindow(QMainWindow):
         self._locked_seats = {s for s in self._locked_seats if self.project.layout.contains(s)}
         self.grid.rebuild()
         self.grid.set_locked_seats(self._locked_seats)
+        self._sync_view_actions()
         self._update_conflicts()
         self._update_status()
         self.student_panel.refresh()
@@ -1229,23 +1233,62 @@ class MainWindow(QMainWindow):
 
     # ============================================================ 视图
     def _on_show_sid(self, flag: bool) -> None:
+        if self._syncing_view:
+            return
+        self._settings().setValue(config.SK_SHOW_SID, bool(flag))
         self.grid.set_show_sid(flag)
 
     def _on_show_title(self, flag: bool) -> None:
-        self.grid.set_show_group_title(flag)
+        if self._syncing_view:
+            return
+        self._settings().setValue(config.SK_SHOW_GROUP_TITLE, bool(flag))
+        # 「显示组标题」属于教室布局的一部分，写回项目才会随项目保存。
+        if self.project.layout.show_group_title != bool(flag):
+            self.project.layout.show_group_title = bool(flag)
+            self.project.notify(EV_LAYOUT)
+        else:
+            self.grid.set_show_group_title(flag)
 
     def _on_show_selection(self, flag: bool) -> None:
+        if self._syncing_view:
+            return
+        self._settings().setValue(config.SK_SHOW_SELECTION, bool(flag))
         self.grid.set_selection_visible(flag)
 
     def _on_card_size(self, name: str) -> None:
-        self.grid.set_card_size(name)
+        if not name:
+            return
         for key, act in self.act_size.items():
             act.setChecked(key == name)
+        self._settings().setValue(config.SK_CARD_SIZE, name)
+        # 座位卡片尺寸同样属于教室布局：写回 project.layout 才会随项目保存，
+        # 且在下次打开「教室布局」对话框时显示同一个值。
+        if self.project.layout.card_size != name:
+            self.project.layout.card_size = name
+            self.project.notify(EV_LAYOUT)
+        else:
+            self.grid.set_card_size(name)
+
+    def _sync_view_actions(self) -> None:
+        """把「视图」菜单的勾选状态对齐到当前项目布局与本地设置。"""
+        self._syncing_view = True
+        try:
+            layout = self.project.layout
+            self.act_show_title.setChecked(bool(layout.show_group_title))
+            act = self.act_size.get(layout.card_size)
+            if act is not None:
+                act.setChecked(True)
+            self.grid.set_show_group_title(bool(layout.show_group_title))
+            self.grid.set_card_size(layout.card_size)
+            self.grid.set_selection_visible(self.act_show_selection.isChecked())
+        finally:
+            self._syncing_view = False
 
     # ============================================================ 文件
     def new_project(self) -> None:
         if not self._confirm_discard():
             return
+        self._forget_last_project()
         self._rebind_project(new_project())
         self.toast("已新建项目：默认 3 组 × 6 行 × 2 列")
 
@@ -1264,6 +1307,7 @@ class MainWindow(QMainWindow):
         self._rebind_project(project)
         self._remember_dir(path)
         self._add_recent(path)
+        self._remember_last_project(path)
         self.toast("已打开 %s（%d 名学生）" % (os.path.basename(path), len(project.students)))
 
     def save_project(self) -> bool:
@@ -1276,6 +1320,7 @@ class MainWindow(QMainWindow):
             return False
         JsonProjectStore.clear_autosave()
         self._add_recent(self.project.path)
+        self._remember_last_project(self.project.path)
         self.setWindowTitle(self._window_title())
         self.toast("已保存到 %s" % self.project.path)
         return True
@@ -1310,6 +1355,7 @@ class MainWindow(QMainWindow):
         self._set_panel_project(self.selection_panel, None)
         self._set_panel_project(self.rotation_panel, None)
         self._refresh_all()
+        self._sync_view_actions()
         self.grid.set_locked_seats(self._locked_seats)
 
     def _set_panel_project(self, panel, service=None) -> None:
@@ -1389,7 +1435,9 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 自动保存
     def _autosave(self) -> None:
-        if not self.project.students and not self.project.assignment:
+        # 只要还有未保存的改动就写自动保存：内容包括教室布局、规则、选区，
+        # 不只是学生和座位（否则只调好布局就崩溃会白调）。
+        if not self.project.dirty:
             return
         JsonProjectStore.autosave(self.project)
 
@@ -1397,7 +1445,11 @@ class MainWindow(QMainWindow):
         info = JsonProjectStore.autosave_info()
         if not info.get("exists"):
             return
-        if self.project.students or self.project.assignment:
+        if self.project.path:
+            # 已经打开了项目文件：只有自动保存比它更新时才值得恢复
+            if float(info.get("mtime") or 0) <= self._project_mtime():
+                return
+        elif self.project.students or self.project.assignment:
             return
         answer = QMessageBox.question(
             self, "发现自动保存",
@@ -1413,6 +1465,12 @@ class MainWindow(QMainWindow):
             return
         self._rebind_project(project)
         self.toast("已恢复自动保存内容")
+
+    def _project_mtime(self) -> float:
+        try:
+            return float(os.path.getmtime(self.project.path))
+        except OSError:
+            return 0.0
 
     def _maybe_welcome(self) -> None:
         settings = self._settings()
@@ -1431,16 +1489,54 @@ class MainWindow(QMainWindow):
         if state is not None:
             self.restoreState(state)
         self.act_show_sid.setChecked(settings.value(config.SK_SHOW_SID, True, type=bool))
-        self.act_show_title.setChecked(settings.value(config.SK_SHOW_GROUP_TITLE, True, type=bool))
+        self.act_show_selection.setChecked(
+            settings.value(config.SK_SHOW_SELECTION, True, type=bool))
+        # 「座位尺寸 / 显示组标题」是教室布局的一部分，这里把上次的选择
+        # 作为新项目的默认值，之后以项目里的布局为准。
+        size = str(settings.value(config.SK_CARD_SIZE, "", type=str) or "")
+        if size in self.act_size:
+            self.project.layout.card_size = size
+        self.project.layout.show_group_title = settings.value(
+            config.SK_SHOW_GROUP_TITLE, self.project.layout.show_group_title, type=bool)
         self.grid.set_show_sid(self.act_show_sid.isChecked())
-        self.grid.set_show_group_title(self.act_show_title.isChecked())
 
     def _save_settings(self) -> None:
         settings = self._settings()
         settings.setValue(config.SK_GEOMETRY, self.saveGeometry())
         settings.setValue(config.SK_STATE, self.saveState())
         settings.setValue(config.SK_SHOW_SID, self.act_show_sid.isChecked())
-        settings.setValue(config.SK_SHOW_GROUP_TITLE, self.act_show_title.isChecked())
+        settings.setValue(config.SK_SHOW_SELECTION, self.act_show_selection.isChecked())
+        settings.setValue(config.SK_CARD_SIZE, self.project.layout.card_size)
+        settings.setValue(config.SK_SHOW_GROUP_TITLE,
+                          bool(self.project.layout.show_group_title))
+
+    # ------------------------------------------------------------ 上次的项目
+    def _remember_last_project(self, path: str) -> None:
+        self._settings().setValue(config.SK_LAST_PROJECT, str(path or ""))
+
+    def _forget_last_project(self) -> None:
+        self._settings().remove(config.SK_LAST_PROJECT)
+
+    def _restore_last_project(self) -> None:
+        """启动时自动打开上次编辑的项目。
+
+        否则教师配好的教室布局虽然写进了项目文件，重新打开程序后看到的
+        仍是默认布局，等于「设置没有保存下来」。
+        """
+        path = str(self._settings().value(config.SK_LAST_PROJECT, "", type=str) or "")
+        if not path:
+            return
+        if not os.path.exists(path):
+            self._forget_last_project()
+            return
+        try:
+            project = JsonProjectStore.load(path)
+        except ProjectStoreError as exc:
+            self._forget_last_project()
+            self.toast("上次的项目已无法打开：%s" % exc)
+            return
+        self._rebind_project(project)
+        self._add_recent(path)
 
     # ------------------------------------------------------------ 帮助
     def show_help(self) -> None:

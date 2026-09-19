@@ -10,24 +10,33 @@ from typing import Optional, Tuple
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
     QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
 from ...models.layout import (
-    LAYOUT_TEMPLATES, MAX_COLS, MAX_GAP, MAX_GROUPS, MAX_ROWS, MIN_COLS, MIN_GAP,
-    MIN_ROWS, Layout, SeatGroup, template_layout,
+    CARD_SIZES, LAYOUT_TEMPLATES, MAX_COLS, MAX_GAP, MAX_GROUPS, MAX_ROWS, MIN_COLS,
+    MIN_GAP, MIN_ROWS, PODIUM_SIDES, Layout, SeatGroup, template_layout,
 )
 from ..style.theme import (
     CARD_SIZE_LABELS, FONT_PODIUM, GRID_SPACING, PODIUM_HEIGHT, RADIUS_CARD,
     Color, aisle_width, seat_size,
 )
 
-PODIUM_LABELS = (("top", "讲台在上方"), ("bottom", "讲台在下方"))
+# ``_combo`` 约定每项是 (显示文字, 内部值)
+PODIUM_LABELS = (("讲台在上方", "top"), ("讲台在下方", "bottom"))
 CARD_ORDER = ("small", "medium", "large")
 TEMPLATE_CUSTOM = "（自定义）"
+
+# 期望的打开尺寸（默认 3 组 × 2 列恰好能完整预览）；最小尺寸在此基础上
+# 取「布局内容真实需求」与下限的较大者——显式最小尺寸一旦小于内容所需，
+# 布局就会把控件压缩到互相重叠。
+PREFERRED_WIDTH = 1040
+PREFERRED_HEIGHT = 660
+MIN_WIDTH = 720
+MIN_HEIGHT = 560
 
 
 def _hline() -> QFrame:
@@ -61,8 +70,6 @@ class LayoutEditorDialog(QDialog):
         self._layout: Layout = project.layout.clone()
         self._loading = False
         self.setWindowTitle("编辑教室布局")
-        self.setMinimumWidth(920)
-        self.setMinimumHeight(560)
         self._build_ui()
 
         self._preview_timer = QTimer(self)
@@ -73,14 +80,15 @@ class LayoutEditorDialog(QDialog):
         self._sync_level_controls()
         self._sync_template_combo()
         self._refresh_group_list(0)
-        self.adjustSize()
+        self._rebuild_preview()
+        self._fit_to_content()
 
     # ------------------------------------------------------------ 界面
     def _build_ui(self) -> None:
         self._loading = True
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(10)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
         title = QLabel("教室布局")
         title.setObjectName("PanelTitle")
         root.addWidget(title)
@@ -134,7 +142,7 @@ class LayoutEditorDialog(QDialog):
         box.addWidget(caption)
 
         self._group_list = QListWidget()
-        self._group_list.setMinimumHeight(120)
+        self._group_list.setMinimumHeight(80)
         self._group_list.currentRowChanged.connect(self._load_group)
         box.addWidget(self._group_list, 1)
 
@@ -194,15 +202,51 @@ class LayoutEditorDialog(QDialog):
         caption = QLabel("预览")
         caption.setObjectName("PanelTitle")
         box.addWidget(caption)
+
+        # 预览内容放在「上下左右都带弹簧」的容器里：容器随滚动区视口伸缩，
+        # 座位网格保持自然大小并居中，超出视口时才出现滚动条。
         self._preview_host = QWidget()
         self._preview_host.setObjectName("Canvas")
-        self._preview_grid = QGridLayout(self._preview_host)
+        host_box = QVBoxLayout(self._preview_host)
+        host_box.setContentsMargins(0, 0, 0, 0)
+        host_box.addStretch(1)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addStretch(1)
+        self._preview_grid = QGridLayout()
         self._preview_grid.setContentsMargins(8, 8, 8, 8)
         self._preview_grid.setSpacing(GRID_SPACING)
+        row.addLayout(self._preview_grid)
+        row.addStretch(1)
+        host_box.addLayout(row)
+        host_box.addStretch(1)
+
         area = QScrollArea()
+        area.setWidgetResizable(True)
         area.setWidget(self._preview_host)
         box.addWidget(area, 1)
         return panel
+
+    def _fit_to_content(self) -> None:
+        """打开时按内容需要设定尺寸，并保证最小尺寸不会把控件压到重叠。
+
+        显式的最小尺寸会覆盖布局自身的最小尺寸（Qt 的 SetDefaultConstraint
+        语义）：一旦设得比内容所需更小，布局就会把控件压缩到互相重叠。
+        这里统一取「下限」与「内容真实需求」的较大者。
+        """
+        hint = self.minimumSizeHint()
+        min_width = max(MIN_WIDTH, int(hint.width()))
+        min_height = max(MIN_HEIGHT, int(hint.height()))
+        self.setMinimumSize(min_width, min_height)
+        width = max(PREFERRED_WIDTH, int(hint.width()))
+        height = max(PREFERRED_HEIGHT, int(hint.height()))
+        # 小屏幕上不要让窗口超出可用区域
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            width = max(min_width, min(width, available.width() - 40))
+            height = max(min_height, min(height, available.height() - 60))
+        self.resize(width, height)
 
     # ------------------------------------------------------------ 数据同步
     def _group_at(self, row: int) -> Optional[SeatGroup]:
@@ -310,8 +354,12 @@ class LayoutEditorDialog(QDialog):
     def _on_level_changed(self, *_args) -> None:
         if self._loading:
             return
-        self._layout.podium_side = self._podium_combo.currentData() or "top"
-        self._layout.card_size = self._card_combo.currentData() or "medium"
+        # 只接受合法取值：写进布局的非法值会被 from_dict 静默改回默认值，
+        # 表现为「设置完下次打开又变回去了」。
+        podium = str(self._podium_combo.currentData() or "")
+        self._layout.podium_side = podium if podium in PODIUM_SIDES else "top"
+        card = str(self._card_combo.currentData() or "")
+        self._layout.card_size = card if card in CARD_SIZES else "medium"
         self._layout.show_group_title = self._title_check.isChecked()
         self._schedule_preview()
 
@@ -402,6 +450,7 @@ class LayoutEditorDialog(QDialog):
             item = grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
 
@@ -425,18 +474,22 @@ class LayoutEditorDialog(QDialog):
         size = seat_size(layout.card_size)
         max_rows = max([g.rows for g in groups], default=1)
         seat_top = row
+        # 组间距列跨越所有行，只需插入一次；放在行循环里会按行数重复叠加。
+        cursor = 0
+        for gi, group in enumerate(groups):
+            cursor += group.cols
+            if gi < len(groups) - 1:
+                spacer = QWidget()
+                spacer.setFixedWidth(aisle_width(group.gap_after))
+                grid.addWidget(spacer, seat_top, cursor, max_rows, 1)
+            cursor += 1
         for r in range(max_rows):
             cursor = 0
             for gi, group in enumerate(groups):
                 if r < group.rows:
                     for c in range(group.cols):
                         grid.addWidget(self._seat_preview(gi, r, c, size), seat_top + r, cursor + c)
-                cursor += group.cols
-                if gi < len(groups) - 1:
-                    spacer = QWidget()
-                    spacer.setFixedWidth(aisle_width(group.gap_after))
-                    grid.addWidget(spacer, seat_top, cursor, max_rows, 1)
-                    cursor += 1
+                cursor += group.cols + 1
         if layout.podium_side == "bottom":
             grid.addWidget(self._podium_widget(), seat_top + max_rows, 0, 1, max(1, total_cols))
 

@@ -139,13 +139,15 @@ class JsonProjectStore:
 
     @staticmethod
     def autosave_info() -> Dict[str, Any]:
-        info: Dict[str, Any] = {"exists": False, "time": "", "path": str(config.AUTOSAVE_FILE)}
+        info: Dict[str, Any] = {
+            "exists": False, "time": "", "mtime": 0.0, "path": str(config.AUTOSAVE_FILE)
+        }
         try:
             if config.AUTOSAVE_FILE.exists():
+                mtime = config.AUTOSAVE_FILE.stat().st_mtime
                 info["exists"] = True
-                info["time"] = time.strftime(
-                    "%Y-%m-%d %H:%M:%S", time.localtime(config.AUTOSAVE_FILE.stat().st_mtime)
-                )
+                info["mtime"] = mtime
+                info["time"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
         except OSError:
             pass
         return info

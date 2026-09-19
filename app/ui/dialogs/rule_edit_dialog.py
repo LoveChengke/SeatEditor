@@ -43,6 +43,9 @@ class RuleEditDialog(QDialog):
         self._build_ui()
         self._rebuild_fields()
         self.adjustSize()
+        # 内容实际需要的尺寸可能比 minimumSizeHint 略大几个像素，按实际尺寸兜底，
+        # 避免教师把窗口拖到最小时控件互相压住。
+        self.setMinimumSize(max(480, self.width()), self.height())
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
