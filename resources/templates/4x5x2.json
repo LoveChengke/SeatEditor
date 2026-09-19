@@ -1,0 +1,10 @@
+{
+  "name": "4 组 × 5 行 × 2 列",
+  "description": "四组五排，适合 40 人左右班级",
+  "groups": 4,
+  "rows": 5,
+  "cols": 2,
+  "podium_side": "top",
+  "card_size": "medium",
+  "gap_after": 1
+}

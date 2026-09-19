@@ -1,0 +1,10 @@
+{
+  "name": "6 组 × 5 行 × 2 列",
+  "description": "六组小班布局，适合分组合作学习",
+  "groups": 6,
+  "rows": 5,
+  "cols": 2,
+  "podium_side": "top",
+  "card_size": "small",
+  "gap_after": 1
+}

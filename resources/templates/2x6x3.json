@@ -1,0 +1,10 @@
+{
+  "name": "2 组 × 6 行 × 3 列",
+  "description": "两大组三列同桌，适合 36 人以内、走道在中间",
+  "groups": 2,
+  "rows": 6,
+  "cols": 3,
+  "podium_side": "top",
+  "card_size": "medium",
+  "gap_after": 2
+}

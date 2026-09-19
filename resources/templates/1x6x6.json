@@ -1,0 +1,10 @@
+{
+  "name": "1 组 × 6 行 × 6 列",
+  "description": "整间教室一个大网格，适合考试排座",
+  "groups": 1,
+  "rows": 6,
+  "cols": 6,
+  "podium_side": "top",
+  "card_size": "small",
+  "gap_after": 1
+}

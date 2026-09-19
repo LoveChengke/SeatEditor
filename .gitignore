@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+*.spec
+
+# 应用产生的文件
+*.seatproj
+*.bak
+*.log
+
+# 编辑器
+.vscode/
+.idea/
