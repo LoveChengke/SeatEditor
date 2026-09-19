@@ -14,6 +14,16 @@ dist/
 *.bak
 *.log
 
+# 测试与开发自检（只在本机保留，不入库）
+tests/
+pytest.ini
+scripts/smoke.py
+scripts/check_widgets.py
+scripts/gui_smoke.py
+scripts/main_smoke.py
+scripts/soak.py
+scripts/bench.py
+
 # 编辑器
 .vscode/
 .idea/

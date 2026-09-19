@@ -187,8 +187,7 @@ seateditor/
 │   │   └── style/                 # theme.py 设计常量 + app.qss 全局样式
 │   └── utils/                     # seat_key / natural_sort / pinyin
 ├── resources/templates/           # 布局模板 JSON + 学生名单导入模板.xlsx（可直接增删）
-├── tests/                         # pytest 测试
-├── scripts/                       # 开发期自检与性能基准脚本
+├── scripts/                       # 随包工具：生成名单模板、渲染界面截图
 └── docs/UI_CONTRACT.md            # 界面层接口契约（内部文档）
 ```
 
@@ -214,10 +213,8 @@ seateditor/
 *term*，交换评估时只重算受影响的 term。因此单次交换评估的代价与座位总数、
 学生总数**基本无关**：60 座位 + 5 条规则的增量评估约 **0.23ms/次**
 （CPU 时间实测），即每秒可评估约 2000 次交换（一次交换要评估前后两次）。
-`tests/test_rule_engine.py` 中的
-`test_incremental_evaluation_matches_full_evaluation`（120 组随机交换）与
-`test_objective_shortcut_matches_full_evaluation`（40 组）断言
-「增量打分的差 == 全量打分的差」，保证优化不改变语义。
+单元测试用「增量打分的差 == 全量打分的差」这一断言（120 组随机交换 +
+40 组目标值快捷路径）保证优化不改变语义。
 
 > 说明：PRD 里「3 秒内完成 200+ 次重启」是估算值。本实现把「座位占用集合」
 > 在整个搜索过程中固定，用**同一批座位上的学生排列**做爬山，因此每次重启都
@@ -233,41 +230,36 @@ seateditor/
 
 ## 七、开发与测试
 
-```powershell
-# 141 个单元测试（模型 / 规则引擎 / 求解器 / 轮换 / 撤销栈 / 持久化 / Excel / 名单模板 / 界面）
-.venv\Scripts\python.exe -m pytest tests -q
+仓库只随包提供两个开发工具（都在 `QT_QPA_PLATFORM=offscreen` 下运行，无需显示器）：
 
+```powershell
 # 重新生成随包资源：resources/templates/学生名单导入模板.xlsx（并列出布局模板）
 .venv\Scripts\python.exe scripts\make_templates.py
 
-# 数据层端到端自检（不启动界面）：布局→选区→规则→求解→轮换→存取→导出
-.venv\Scripts\python.exe scripts\smoke.py
-
-# 界面控件离屏自检（座位表、名单表格、标签胶囊）
-.venv\Scripts\python.exe scripts\check_widgets.py
-
-# 完整界面冒烟：构造主窗口，跑通 名单/选区/规则/排位/拖拽/撤销重做/轮换/导出/名单模板/存取/新建
-.venv\Scripts\python.exe scripts\gui_smoke.py
-
-# 入口冒烟：真正跑一遍 main.py（QSS + 字体回退 + 事件循环），0.8 秒后自动退出
-.venv\Scripts\python.exe scripts\main_smoke.py
-
-# 渲染界面截图用于视觉走查
+# 渲染界面截图（README「四、界面预览」的图片即由此生成）
 .venv\Scripts\python.exe scripts\render_preview.py
-
-# 单独渲染左侧名单面板（走查底部按钮排版）
 .venv\Scripts\python.exe scripts\grab_student_panel.py
-
-# 稳定性压测：连续大量随机界面操作，检查状态始终自洽（约 40 次/秒）
-.venv\Scripts\python.exe scripts\soak.py 2000
-
-# 增量评估性能基准
-.venv\Scripts\python.exe scripts\bench.py
 ```
 
-界面相关的脚本都跑在 `QT_QPA_PLATFORM=offscreen` 下，无需显示器；
 若运行环境里 Qt 字体库为空（精简版 / 离屏），`theme.ensure_font_db()`
 会自动从系统字体目录补注册字体，避免中文显示成方框。
+
+### 本地自测（不入库）
+
+测试与自检脚本刻意**不纳入版本控制**（见 `.gitignore`），只在本机保留：
+
+| 脚本 | 作用 |
+|---|---|
+| `pytest tests -q` | 141 个单元测试（模型 / 规则引擎 / 求解器 / 轮换 / 撤销栈 / 持久化 / Excel / 名单模板 / 界面） |
+| `scripts/smoke.py` | 数据层端到端自检（不启动界面）：布局→选区→规则→求解→轮换→存取→导出 |
+| `scripts/check_widgets.py` | 界面控件离屏自检（座位表、名单表格、标签胶囊） |
+| `scripts/gui_smoke.py` | 完整界面冒烟：名单 / 选区 / 规则 / 排位 / 拖拽 / 撤销重做 / 轮换 / 导出 / 存取 / 新建 |
+| `scripts/main_smoke.py` | 入口冒烟：真正跑一遍 `main.py`（QSS + 字体回退 + 事件循环） |
+| `scripts/soak.py 2000` | 稳定性压测：连续大量随机界面操作，检查状态始终自洽（约 40 次/秒） |
+| `scripts/bench.py` | 增量评估性能基准 |
+
+`requirements.txt` 里的 `pytest` / `pytest-qt` 就是给这些本地自测用的；
+开发时把它们拉下来直接跑即可，仓库内容不受影响。
 
 ### 打包（PyInstaller）
 
