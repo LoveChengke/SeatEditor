@@ -152,7 +152,7 @@ class ConflictReportDialog(QDialog):
         layout.addWidget(area, 1)
         return box
 
-    # ------------------------------------------------------------ 文案
+    # 文案
     def _seat_text(self, seat_key) -> str:
         parts = str(seat_key or "").split("-")
         if len(parts) != 3:
@@ -167,7 +167,7 @@ class ConflictReportDialog(QDialog):
         sid_text = str(sid or "")
         try:
             name = self.project.student_name(sid_text)
-        except Exception:  # noqa: BLE001
+        except Exception:
             name = ""
         if name and name != sid_text:
             return "%s（%s）" % (name, sid_text)

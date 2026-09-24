@@ -127,7 +127,7 @@ def ensure_font_db() -> int:
     """
     try:
         from PyQt6.QtGui import QFontDatabase
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 0
     try:
         if QFontDatabase.families():
@@ -136,12 +136,12 @@ def ensure_font_db() -> int:
         for path in SYSTEM_FONT_CANDIDATES:
             try:
                 font_id = QFontDatabase.addApplicationFont(path)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
             if font_id != -1:
                 added += len(QFontDatabase.applicationFontFamilies(font_id))
         return added
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 0
 
 

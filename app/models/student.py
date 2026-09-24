@@ -66,7 +66,7 @@ class Student:
         self.tags = _clean_tags(self.tags)
         self.attrs = _clean_attrs(self.attrs)
 
-    # ------------------------------------------------------------ 属性
+    # 属性
     def sid_tail(self, n: int = 4) -> str:
         """学号后 n 位，用于座位卡片副文本。"""
         sid = self.sid
@@ -83,7 +83,7 @@ class Student:
         haystack.extend(t.lower() for t in self.tags)
         return any(kw in h for h in haystack)
 
-    # ------------------------------------------------------------ 序列化
+    # 序列化
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {"sid": self.sid, "name": self.name}
         if self.gender:
@@ -111,8 +111,8 @@ class Student:
             note=data.get("note", "") or "",
         )
 
-    # ------------------------------------------------------------ 排序键
-    def __repr__(self) -> str:  # pragma: no cover - 调试用
+    # 排序键
+    def __repr__(self) -> str:  # 调试用
         return "Student(%r, %r)" % (self.sid, self.name)
 
 

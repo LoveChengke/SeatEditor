@@ -565,7 +565,7 @@ class MainWindow(QMainWindow):
         info.setEnabled(False)
         menu.exec(global_pos)
 
-    # ------------------------------------------------------------ 原子操作
+    # 原子操作
     def assign_student(self, sid: str, seat) -> bool:
         student = self.project.get_student(sid)
         if student is None:
@@ -718,7 +718,7 @@ class MainWindow(QMainWindow):
         self._update_status()
         self.student_panel.refresh()
 
-    # ------------------------------------------------------------ 选区操作
+    # 选区操作
     def _select_all_seats(self) -> None:
         self.grid.select_all()
         self.toast("已选中全部 %d 个座位" % self.grid.seat_count())
@@ -1359,7 +1359,7 @@ class MainWindow(QMainWindow):
         self._sync_view_actions()
         self.grid.set_locked_seats(self._locked_seats)
 
-    # ------------------------------------------------------------ 最近文件
+    # 最近文件
     def _settings(self) -> QSettings:
         return QSettings(config.ORG_NAME, config.APP_ID)
 
@@ -1402,7 +1402,7 @@ class MainWindow(QMainWindow):
     def _default_name(self, name: str) -> str:
         return str(Path(self._last_dir()) / name)
 
-    # ------------------------------------------------------------ 自动保存
+    # 自动保存
     def _autosave(self) -> None:
         # 只要还有未保存的改动就写自动保存：内容包括教室布局、规则、选区，
         # 不只是学生和座位（否则只调好布局就崩溃会白调）。
@@ -1448,7 +1448,7 @@ class MainWindow(QMainWindow):
         settings.setValue(config.SK_WELCOME_SHOWN, True)
         self.show_help()
 
-    # ------------------------------------------------------------ 设置
+    # 设置
     def _restore_settings(self) -> None:
         settings = self._settings()
         geometry = settings.value(config.SK_GEOMETRY)
@@ -1479,7 +1479,7 @@ class MainWindow(QMainWindow):
         settings.setValue(config.SK_SHOW_GROUP_TITLE,
                           bool(self.project.layout.show_group_title))
 
-    # ------------------------------------------------------------ 上次的项目
+    # 上次的项目
     def _remember_last_project(self, path: str) -> None:
         self._settings().setValue(config.SK_LAST_PROJECT, str(path or ""))
 
@@ -1507,7 +1507,7 @@ class MainWindow(QMainWindow):
         self._rebind_project(project)
         self._add_recent(path)
 
-    # ------------------------------------------------------------ 帮助
+    # 帮助
     def show_help(self) -> None:
         steps = "\n".join(config.WELCOME_STEPS)
         text = (
@@ -1551,7 +1551,7 @@ class MainWindow(QMainWindow):
             "技术栈：Python + PyQt6 + openpyxl" % (config.APP_NAME, config.VERSION),
         )
 
-    # ------------------------------------------------------------ 杂项
+    # 杂项
     def _confirm(self, text: str, title: str = "确认") -> bool:
         return confirm(self, text, title)
 

@@ -63,7 +63,7 @@ class Solver:
         self.report = SolveReport()
         self.keep_current = keep_current
 
-        self.locked: Set[Coord] = {tuple(int(v) for v in s) for s in (locked_seats or [])}  # type: ignore[misc]
+        self.locked: Set[Coord] = {tuple(int(v) for v in s) for s in (locked_seats or [])}
         self.fixed: Dict[Coord, str] = {coord: sid for coord, sid in _fixed_of(engine)}
 
         self._base: Dict[str, str] = {}
@@ -80,7 +80,7 @@ class Solver:
         self._finished = False
         self._prepared = False
 
-    # ------------------------------------------------------------ 准备
+    # 准备
     def prepare(self, initial: Optional[Mapping[str, str]] = None) -> None:
         """校验规模、确定座位占用集合、生成初始解。"""
         problems = self.engine.precheck()
@@ -169,7 +169,7 @@ class Solver:
             assignment[make_key(coord)] = sid
         return assignment
 
-    # ------------------------------------------------------------ 求解
+    # 求解
     def solve(self, initial: Optional[Mapping[str, str]] = None) -> Solution:
         if not self._prepared:
             self.prepare(initial)
@@ -178,7 +178,7 @@ class Solver:
         guard = 0
         while not self.iterate(200):
             guard += 1
-            if guard > 100000:  # pragma: no cover - 兜底
+            if guard > 100000:  # 兜底
                 break
         return self.best_solution()
 
@@ -250,7 +250,7 @@ class Solver:
             self._best = dict(self._assignment)
             self._objective = value
 
-    # ------------------------------------------------------------ 结果
+    # 结果
     @property
     def best_assignment(self) -> Dict[str, str]:
         return dict(self._best or self._assignment)

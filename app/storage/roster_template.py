@@ -22,13 +22,13 @@ from typing import Any, Tuple
 from .. import config
 from .excel_io import OPENPYXL_AVAILABLE, ExcelError
 
-if OPENPYXL_AVAILABLE:  # pragma: no branch - 环境相关
+if OPENPYXL_AVAILABLE:  # 环境相关
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.datavalidation import DataValidation
 
-# ---------------------------------------------------------------- 常量
+# 常量
 TEMPLATE_FILENAME = "学生名单导入模板.xlsx"
 
 TEMPLATE_SHEET = "名单"
@@ -218,7 +218,7 @@ def write_roster_template(path) -> Path:
     _write_example_sheet(workbook.create_sheet(EXAMPLE_SHEET))
     try:
         workbook.save(str(target))
-    except Exception as exc:  # noqa: BLE001 - 面向用户的可读错误
+    except Exception as exc:  # 面向用户的可读错误
         raise ExcelError("生成模板失败：%s" % exc) from exc
     finally:
         workbook.close()

@@ -40,7 +40,7 @@ class StudentService:
     def __init__(self, project: Project) -> None:
         self.project = project
 
-    # ------------------------------------------------------------ 增删改
+    # 增删改
     def add(self, sid: str, name: str, gender: str = "", tags: Optional[Iterable[str]] = None,
             attrs: Optional[Mapping[str, float]] = None, note: str = "") -> Tuple[bool, str]:
         sid, name = str(sid or "").strip(), str(name or "").strip()
@@ -84,7 +84,7 @@ class StudentService:
             self.project.notify("students")
         return count
 
-    # ------------------------------------------------------------ 查询
+    # 查询
     def filter(self, condition: StudentFilter) -> List[Student]:
         result: List[Student] = []
         assigned = set(self.project.assignment.values())
@@ -120,7 +120,7 @@ class StudentService:
             result.append(student)
         return result
 
-    # ------------------------------------------------------------ 排序
+    # 排序
     def sort_key(self, key: str):
         if key == "name":
             return lambda s: pinyin_key(s.name)
@@ -141,7 +141,7 @@ class StudentService:
     def sorted_students(self, students: Sequence[Student], key: str = "sid", reverse: bool = False) -> List[Student]:
         return sorted(students, key=self.sort_key(key), reverse=reverse)
 
-    # ------------------------------------------------------------ 标签
+    # 标签
     def add_tag(self, sids: Iterable[str], tag: str) -> int:
         tag = str(tag or "").strip()
         if not tag:
@@ -177,7 +177,7 @@ class StudentService:
                 counts[tag] = counts.get(tag, 0) + 1
         return counts
 
-    # ------------------------------------------------------------ 文本导入
+    # 文本导入
     @staticmethod
     def parse_text(text: str, default_gender: str = "") -> Tuple[List[Student], List[str]]:
         """解析粘贴的名单：支持 ``学号 姓名`` / ``学号,姓名,性别`` 等。"""

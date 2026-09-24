@@ -36,7 +36,7 @@ class Selection:
         self.seats = _clean_seats(self.seats)
         self.color = str(self.color or DEFAULT_SELECTION_COLOR)
 
-    # ------------------------------------------------------------ 查询
+    # 查询
     def __len__(self) -> int:
         return len(self.seats)
 
@@ -55,19 +55,19 @@ class Selection:
     def size(self) -> int:
         return len(self.seats)
 
-    # ------------------------------------------------------------ 编辑
+    # 编辑
     def add(self, seats: Iterable[Sequence[int]]) -> None:
         for seat in seats:
             coord = try_parse_key(seat) if not isinstance(seat, (tuple, list)) else tuple(int(v) for v in seat)
             if coord is not None:
-                self.seats.add(coord)  # type: ignore[arg-type]
+                self.seats.add(coord)
 
     def remove(self, seats: Iterable[Sequence[int]]) -> None:
         for seat in seats:
             coord = try_parse_key(seat) if not isinstance(seat, (tuple, list)) else tuple(int(v) for v in seat)
-            self.seats.discard(coord)  # type: ignore[arg-type]
+            self.seats.discard(coord)
 
-    # ------------------------------------------------------------ 序列化
+    # 序列化
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,

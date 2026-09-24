@@ -69,7 +69,7 @@ class StudentPanel(ProjectPanel):
         self.refresh()
         project.subscribe(self._on_project_event)
 
-    # ------------------------------------------------------------ 构建界面
+    # 构建界面
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -181,15 +181,15 @@ class StudentPanel(ProjectPanel):
         clear_action.triggered.connect(self._clear_tag_checks)
         return menu
 
-    # ------------------------------------------------------------ 对外接口
+    # 对外接口
     def _on_project_change(self, project: Project,
                            service: Optional[StudentService] = None) -> None:
         """重建表格模型；旧模型也要退订旧项目，否则两套数据会互相刷新。"""
         old_project, old_model = self._project, self._model
         if old_project is not None:
             try:
-                old_project.unsubscribe(old_model._on_project_event)  # type: ignore[attr-defined]
-            except Exception:  # noqa: BLE001
+                old_project.unsubscribe(old_model._on_project_event)
+            except Exception:
                 pass
         self._service = service if service is not None else StudentService(project)
         self._selected_sids = []
@@ -224,7 +224,7 @@ class StudentPanel(ProjectPanel):
             self._selected_sids = []
             self.selection_changed.emit([])
 
-    # ------------------------------------------------------------ 筛选
+    # 筛选
     def _tag_mode(self) -> str:
         return TAG_MODE_ALL if self._inter_radio.isChecked() else TAG_MODE_ANY
 
@@ -247,7 +247,7 @@ class StudentPanel(ProjectPanel):
             students = self._service.filter(condition)
             self._view.clearSelection()
             self._model.set_students(students)
-        except Exception as exc:  # noqa: BLE001 - 过滤失败不应崩溃
+        except Exception as exc:  # 过滤失败不应崩溃
             self._warn("筛选名单失败：%s" % exc)
         finally:
             self._updating = False
@@ -276,7 +276,7 @@ class StudentPanel(ProjectPanel):
             text += " · 筛选出 %d 人" % shown
         self._stats_label.setText(text)
 
-    # ------------------------------------------------------------ 标签筛选
+    # 标签筛选
     def _rebuild_tag_menu(self) -> None:
         self._tag_populating = True
         try:
@@ -290,7 +290,7 @@ class StudentPanel(ProjectPanel):
                     )
                     item.setForeground(QColor(tag.color))
                     self._tag_list.addItem(item)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         finally:
             self._tag_populating = False
@@ -316,7 +316,7 @@ class StudentPanel(ProjectPanel):
         self._rebuild_tag_menu()
         self._apply_filter()
 
-    # ------------------------------------------------------------ 选择
+    # 选择
     def _on_selection_changed(self, *_args) -> None:
         if self._updating:
             return
@@ -326,7 +326,7 @@ class StudentPanel(ProjectPanel):
         self._selected_sids = list(sids)
         self.selection_changed.emit(list(sids))
 
-    # ------------------------------------------------------------ 操作
+    # 操作
     def _on_double_clicked(self, sid: str) -> None:
         if sid:
             self.edit_requested.emit(sid)
@@ -357,7 +357,7 @@ class StudentPanel(ProjectPanel):
     def _on_text_import(self) -> None:
         try:
             from ..dialogs.text_import_dialog import TextImportDialog
-        except Exception as exc:  # noqa: BLE001 - 对话框缺失不影响其余功能
+        except Exception as exc:  # 对话框缺失不影响其余功能
             self._warn("文本导入功能不可用：%s" % exc)
             return
         try:
@@ -365,13 +365,13 @@ class StudentPanel(ProjectPanel):
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             students = list(dialog.students or [])
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("文本导入失败：%s" % exc)
             return
         if students:
             self.students_imported.emit(students)
 
-    # ------------------------------------------------------------ 右键菜单
+    # 右键菜单
     def _on_context_menu(self, pos: QPoint) -> None:
         index = self._view.indexAt(pos)
         sids = self.selected_sids()
@@ -410,13 +410,13 @@ class StudentPanel(ProjectPanel):
         elif chosen is act_add:
             self.add_requested.emit()
 
-    # ------------------------------------------------------------ 项目事件
+    # 项目事件
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_STUDENTS, EV_TAGS, EV_ASSIGNMENT, EV_ANY):
             return
         self._schedule_refresh()
 
-    # ------------------------------------------------------------ 工具
+    # 工具
     def _confirm(self, text: str, title: str) -> bool:
         return confirm(self, text, title)
 

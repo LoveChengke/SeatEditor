@@ -17,7 +17,7 @@ MIME_SEAT = "application/x-seat"
 MIME_STUDENT = "application/x-student"
 
 
-# ------------------------------------------------------------------ 座位
+# 座位
 def seat_payload(seat, sid: str = "", source: str = "seat") -> Dict[str, Any]:
     return {"seat": make_key(seat), "sid": sid or "", "source": source}
 
@@ -36,7 +36,7 @@ def decode_seat(mime: Optional[QMimeData]) -> Dict[str, Any]:
     try:
         raw = bytes(mime.data(MIME_SEAT)).decode("utf-8")
         data = json.loads(raw)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {}
     if not isinstance(data, dict):
         return {}
@@ -46,7 +46,7 @@ def decode_seat(mime: Optional[QMimeData]) -> Dict[str, Any]:
     return {"seat": coord, "sid": str(data.get("sid") or ""), "source": str(data.get("source") or "seat")}
 
 
-# ------------------------------------------------------------------ 学生
+# 学生
 def student_mime(sids: List[str]) -> QMimeData:
     mime = QMimeData()
     payload = {"sids": [str(s) for s in sids if s]}
@@ -60,7 +60,7 @@ def decode_students(mime: Optional[QMimeData]) -> List[str]:
         return []
     try:
         data = json.loads(bytes(mime.data(MIME_STUDENT)).decode("utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
     sids = data.get("sids") if isinstance(data, dict) else None
     if not sids:

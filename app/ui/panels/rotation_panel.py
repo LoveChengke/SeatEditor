@@ -1,4 +1,4 @@
-"""自动轮换面板（PRD F5）。
+"""自动轮换面板。
 
 模式选择（区域轮换 / 按排平移 / 按列平移 / 自定义向量）、参数控件、
 「预览」生成 :class:`RotationPlan`、「应用轮换」、轮换历史与回退。
@@ -59,7 +59,7 @@ class RotationPanel(ProjectPanel):
         self.refresh()
         project.subscribe(self._on_project_event)
 
-    # ------------------------------------------------------------ 构建界面
+    # 构建界面
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -179,7 +179,7 @@ class RotationPanel(ProjectPanel):
         grid.addWidget(self._shift_hint, 3, 0, 1, 2)
         form.addWidget(self._shift_host)
 
-    # ------------------------------------------------------------ 对外接口
+    # 对外接口
     def _on_project_change(self, project: Project, service=None) -> None:
         self._service = RotationService(project)
         self._checked_ids = set()
@@ -215,7 +215,7 @@ class RotationPanel(ProjectPanel):
                 item.setToolTip("%s（%d 座）" % (selection.name, len(selection.seats)))
                 self._selection_list.addItem(item)
             self._checked_ids &= {selection.id for selection in selections}
-        except Exception as exc:  # noqa: BLE001 - 刷新失败不应崩溃
+        except Exception as exc:  # 刷新失败不应崩溃
             self._set_info("选区列表刷新失败：%s" % exc, error=True)
         finally:
             self._populating = False
@@ -242,7 +242,7 @@ class RotationPanel(ProjectPanel):
             item.setToolTip("%s\n共 %d 个已分配座位" % (text, assigned))
             self._history_list.addItem(item)
 
-    # ------------------------------------------------------------ 模式 / 参数
+    # 模式 / 参数
     def _on_mode_changed(self) -> None:
         mode = self._mode_combo.currentData()
         is_region = mode == MODE_REGION
@@ -279,7 +279,7 @@ class RotationPanel(ProjectPanel):
                 result.append(str(selection_id))
         return result
 
-    # ------------------------------------------------------------ 预览 / 应用
+    # 预览 / 应用
     def _build_plan(self):
         if self._project is None:
             self._set_info("当前没有打开的项目。", error=True)
@@ -305,7 +305,7 @@ class RotationPanel(ProjectPanel):
         except RotationError as exc:
             self._set_info("轮换参数有误：%s" % exc, error=True)
             return None
-        except Exception as exc:  # noqa: BLE001 - 服务异常不应崩溃界面
+        except Exception as exc:  # 服务异常不应崩溃界面
             self._set_info("轮换失败：%s" % exc, error=True)
             return None
 
@@ -343,13 +343,13 @@ class RotationPanel(ProjectPanel):
             return
         self.rollback_requested.emit(int(week))
 
-    # ------------------------------------------------------------ 项目事件
+    # 项目事件
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_SELECTIONS, EV_HISTORY, EV_ASSIGNMENT, EV_ANY):
             return
         self._schedule_refresh()
 
-    # ------------------------------------------------------------ 工具
+    # 工具
     def _set_info(self, text: str, error: bool = False) -> None:
         self._info_label.setText(text)
         self._info_label.setStyleSheet("color: %s;" % (Color.DANGER if error else Color.TEXT_SECONDARY))

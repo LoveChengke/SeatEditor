@@ -171,7 +171,7 @@ class StudentEditDialog(QDialog):
         for row in rows:
             self._attr_table.removeRow(row)
 
-    # ------------------------------------------------------------ 数据
+    # 数据
     def _load(self) -> None:
         self._attr_table.setRowCount(0)
         if self.student is None:

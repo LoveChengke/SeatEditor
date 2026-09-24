@@ -69,7 +69,7 @@ class ProjectPanel(QWidget):
             return
         try:
             self._project.unsubscribe(self._on_project_event)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     def _on_project_change(self, project: Project, service=None) -> None:

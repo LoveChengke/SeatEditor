@@ -1,4 +1,4 @@
-"""选区面板（PRD F3.2）。
+"""选区面板。
 
 选区列表（名称 + 座位数 + 颜色块）、用座位表当前框选创建选区、
 重命名 / 删除 / 应用高亮、批量操作（清空 / 设为空置 / 批量分配）
@@ -55,7 +55,7 @@ class SelectionPanel(ProjectPanel):
         self.refresh()
         project.subscribe(self._on_project_event)
 
-    # ------------------------------------------------------------ 构建界面
+    # 构建界面
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -101,7 +101,7 @@ class SelectionPanel(ProjectPanel):
         quick_row.addWidget(button("按列范围", self._quick_by_col, "Ghost"))
         root.addLayout(quick_row)
 
-    # ------------------------------------------------------------ 对外接口
+    # 对外接口
     def _on_project_change(self, project: Project, service=None) -> None:
         self._current_seats = set()
 
@@ -117,7 +117,7 @@ class SelectionPanel(ProjectPanel):
                 item.setData(Qt.ItemDataRole.UserRole, selection.id)
                 item.setToolTip("%s\n共 %d 个座位" % (selection.name, len(selection.seats)))
                 self._list.addItem(item)
-        except Exception as exc:  # noqa: BLE001 - 刷新失败不应崩溃
+        except Exception as exc:  # 刷新失败不应崩溃
             QMessageBox.warning(self, "提示", "选区列表刷新失败：%s" % exc)
         if current_id:
             self._select_id(current_id)
@@ -135,7 +135,7 @@ class SelectionPanel(ProjectPanel):
         self._current_seats = result
         self._update_hint()
 
-    # ------------------------------------------------------------ 选中项
+    # 选中项
     def _current_id(self) -> str:
         item = self._list.currentItem()
         return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
@@ -160,7 +160,7 @@ class SelectionPanel(ProjectPanel):
         else:
             self._hint_label.setText("座位表当前选中 0 个座位（可先框选座位）")
 
-    # ------------------------------------------------------------ 选区操作
+    # 选区操作
     def _create_from_seats(self) -> None:
         seats = self._require_seats()
         if seats is None:
@@ -204,7 +204,7 @@ class SelectionPanel(ProjectPanel):
             return
         self.selection_deleted.emit(selection.id)
 
-    # ------------------------------------------------------------ 批量操作
+    # 批量操作
     def _require_seats(self) -> Optional[Set[Coord]]:
         if not self._current_seats:
             self._warn("请先在座位表中选择座位（框选或 Ctrl + 点击）。")
@@ -231,7 +231,7 @@ class SelectionPanel(ProjectPanel):
             return
         self.batch_assign_requested.emit(seats)
 
-    # ------------------------------------------------------------ 快捷选区
+    # 快捷选区
     def _quick_by_group(self) -> None:
         layout = self._project.layout if self._project is not None else None
         if layout is None or layout.group_count <= 0:
@@ -291,13 +291,13 @@ class SelectionPanel(ProjectPanel):
             return
         self.selection_created.emit(str(name).strip(), set(seats))
 
-    # ------------------------------------------------------------ 项目事件
+    # 项目事件
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_SELECTIONS, EV_ANY):
             return
         self._schedule_refresh()
 
-    # ------------------------------------------------------------ 工具
+    # 工具
     def _confirm(self, text: str, title: str) -> bool:
         return confirm(self, text, title)
 

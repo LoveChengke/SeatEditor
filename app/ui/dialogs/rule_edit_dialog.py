@@ -120,7 +120,7 @@ class RuleEditDialog(QDialog):
             return self.rule
         return make_rule(kind)
 
-    # ------------------------------------------------------------ 动态表单
+    # 动态表单
     def _rebuild_fields(self, *_args) -> None:
         while self._form.count():
             item = self._form.takeAt(0)
@@ -213,15 +213,15 @@ class RuleEditDialog(QDialog):
         combo.setCurrentIndex(max(0, index))
         return combo
 
-    # ------------------------------------------------------------ 结果
+    # 结果
     def _value_of(self, field, widget: QWidget) -> Any:
         if field.kind == F_INT:
-            return int(widget.value())  # type: ignore[attr-defined]
+            return int(widget.value())
         if field.kind == F_BOOL:
             return bool(widget.isChecked())
         if field.kind == F_TEXT:
-            return str(widget.text()).strip()  # type: ignore[attr-defined]
-        data = widget.currentData()  # type: ignore[attr-defined]
+            return str(widget.text()).strip()
+        data = widget.currentData()
         return "" if data is None else str(data)
 
     def _collect_rule(self) -> Optional[Rule]:

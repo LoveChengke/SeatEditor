@@ -143,7 +143,7 @@ class RuleEngine:
             if sid:
                 self._previous_by_sid[sid] = key
 
-    # ------------------------------------------------------------ 构造
+    # 构造
     @classmethod
     def from_project(cls, project) -> "RuleEngine":
         return cls(
@@ -154,7 +154,7 @@ class RuleEngine:
             project.previous_assignment,
         )
 
-    # ------------------------------------------------------------ 缓存工具
+    # 缓存工具
     def key_of(self, seat: Coord) -> str:
         """``(g, r, c) -> "g-r-c"``，带缓存（热路径）。"""
         cached = self._key_cache.get(seat)
@@ -745,14 +745,14 @@ class RuleEngine:
             rule_scores=rule_scores,
         )
 
-    # ------------------------------------------------------------ PRD 接口
+    # PRD 接口
     def check_hard(
         self, assignment: Mapping[str, str], seats: Optional[Iterable[Coord]] = None
     ) -> List[Violation]:
         """硬约束校验；``seats`` 为 None 时全量校验，否则只校验受影响的座位。"""
         return [term.to_violation() for term in self.hard_terms(assignment, seats)]
 
-    # ------------------------------------------------------------ 预检
+    # 预检
     def precheck(self) -> List[str]:
         """搜索前的可行性预检，返回错误信息列表。"""
         problems: List[str] = []
@@ -818,7 +818,7 @@ class RuleEngine:
             problems.append("固定座位的学生人数超过可用座位数")
         return problems
 
-    # ------------------------------------------------------------ 文案
+    # 文案
     def _int_param(self, rule: Rule, key: str, default: int, minimum: int = 0) -> int:
         try:
             return max(minimum, int(rule.params.get(key, default)))

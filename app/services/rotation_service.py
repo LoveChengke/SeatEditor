@@ -1,4 +1,4 @@
-"""自动轮换：区域轮换 / 平移轮换（PRD F5）。"""
+"""自动轮换：区域轮换 / 平移轮换。"""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ class RotationService:
     def __init__(self, project: Project) -> None:
         self.project = project
 
-    # ------------------------------------------------------------ 工具
+    # 工具
     def _ordered(self, selection: Selection) -> List[Coord]:
         return sorted(selection.seats, key=lambda s: (s[1], s[0], s[2]))
 
@@ -77,7 +77,7 @@ class RotationService:
             return []
         return ["轮换后存在 %d 条硬约束冲突：%s" % (len(violations), describe_violations(violations, 3))]
 
-    # ------------------------------------------------------------ 区域轮换
+    # 区域轮换
     def region_rotate(
         self,
         selection_ids: Sequence[str],
@@ -156,7 +156,7 @@ class RotationService:
         plan.warnings.extend(self._check(assignment))
         return plan
 
-    # ------------------------------------------------------------ 平移轮换
+    # 平移轮换
     def shift(
         self,
         delta_row: int = 1,
@@ -266,7 +266,7 @@ class RotationService:
                 rescued += 1
         return len(missing) - rescued
 
-    # ------------------------------------------------------------ 差异
+    # 差异
     def _diff(self, assignment: Mapping[str, str]) -> List[Tuple[str, str, str]]:
         before = self.project.assignment
         changes: List[Tuple[str, str, str]] = []
@@ -278,7 +278,7 @@ class RotationService:
                 changes.append((key, old, new))
         return changes
 
-    # ------------------------------------------------------------ 应用
+    # 应用
     def apply(self, plan: RotationPlan, label: str = "") -> RotationRecord:
         """把轮换方案写入项目并记录历史（第 N 周）。
 

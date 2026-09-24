@@ -120,7 +120,7 @@ class SeatGridView(QWidget):
         self._podium_top: Optional[PodiumWidget] = None
         self._podium_bottom: Optional[PodiumWidget] = None
 
-    # ------------------------------------------------------------ 项目
+    # 项目
     def set_project(self, project: Optional[Project]) -> None:
         if self._project is not None:
             self._project.unsubscribe(self._on_project_event)
@@ -140,7 +140,7 @@ class SeatGridView(QWidget):
         elif event == "any":
             self.refresh()
 
-    # ------------------------------------------------------------ 构建
+    # 构建
     def rebuild(self) -> None:
         """按当前 layout 重建整张座位表。"""
         _clear_layout(self._root)
@@ -210,7 +210,7 @@ class SeatGridView(QWidget):
         self._root.addStretch(1)
         self.refresh()
 
-    # ------------------------------------------------------------ 刷新
+    # 刷新
     def refresh(self, seats: Optional[Iterable] = None) -> None:
         """刷新座位显示；``seats`` 为 None 时刷新全部（局部刷新用）。"""
         project = self._project
@@ -272,7 +272,7 @@ class SeatGridView(QWidget):
         self._selection_visible = bool(flag)
         self._apply_selection_style()
 
-    # ------------------------------------------------------------ 锁定
+    # 锁定
     def set_locked_seats(self, seats: Iterable) -> None:
         """设置被锁定的座位（排位时保持不动）。"""
         result: Set[Coord] = set()
@@ -286,7 +286,7 @@ class SeatGridView(QWidget):
     def locked_seats(self) -> Set[Coord]:
         return set(self._locked)
 
-    # ------------------------------------------------------------ 选区
+    # 选区
     def selected_seats(self) -> Set[Coord]:
         return set(self._selected)
 
@@ -322,7 +322,7 @@ class SeatGridView(QWidget):
         for seat, widget in self._seat_widgets.items():
             widget.set_selected(self._selection_visible and seat in self._selected)
 
-    # ------------------------------------------------------------ 查询
+    # 查询
     def widget_at(self, seat) -> Optional[SeatWidget]:
         coord = seat if isinstance(seat, tuple) else try_parse_key(seat)
         if coord is None:
@@ -341,7 +341,7 @@ class SeatGridView(QWidget):
     def seat_count(self) -> int:
         return len(self._seat_widgets)
 
-    # ------------------------------------------------------------ 交互
+    # 交互
     def _on_seat_clicked(self, seat, modifiers: int) -> None:
         ctrl = bool(modifiers & int(Qt.KeyboardModifier.ControlModifier.value))
         shift = bool(modifiers & int(Qt.KeyboardModifier.ShiftModifier.value))
@@ -357,7 +357,7 @@ class SeatGridView(QWidget):
     def _on_student_dropped(self, sid: str, seat) -> None:
         self.student_drop_requested.emit(str(sid), tuple(seat))
 
-    # ------------------------------------------------------------ 框选
+    # 框选
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if obj is self._canvas:
             etype = event.type()
@@ -392,7 +392,7 @@ class SeatGridView(QWidget):
                 selection.add(seat)
         self.set_selected(selection)
 
-    # ------------------------------------------------------------ 尺寸
+    # 尺寸
     def sizeHint(self) -> QSize:  # noqa: N802
         project = self._project
         if project is None or not project.layout.groups:

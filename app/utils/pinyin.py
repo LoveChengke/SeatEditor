@@ -10,9 +10,9 @@ from __future__ import annotations
 from typing import List, Tuple
 
 _LAZY = None
-try:  # pragma: no cover - 取决于环境是否安装 pypinyin
-    from pypinyin import lazy_pinyin as _LAZY  # type: ignore
-except Exception:  # noqa: BLE001 - 任何导入失败都回退
+try:  # 取决于环境是否安装 pypinyin
+    from pypinyin import lazy_pinyin as _LAZY
+except Exception:  # 任何导入失败都回退
     _LAZY = None
 
 
@@ -21,7 +21,7 @@ def _char_keys(text: str) -> List[Tuple[int, int, int]]:
     for ch in text:
         try:
             raw = ch.encode("gbk")
-        except Exception:  # noqa: BLE001 - 非常用字
+        except Exception:  # 非常用字
             keys.append((2, ord(ch), 0))
             continue
         if len(raw) == 2:
@@ -43,6 +43,6 @@ def pinyin_key(text: str) -> Tuple:
     if _LAZY is not None:
         try:
             return (0, tuple(_LAZY(s)), s)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     return (1, tuple(_char_keys(s)), s)

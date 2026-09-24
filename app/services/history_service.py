@@ -1,4 +1,4 @@
-"""快照式撤销 / 重做栈（PRD F9）。
+"""快照式撤销 / 重做栈。
 
 快照粒度 = 整个 ``assignment`` 字典（60 座位约几 KB，50 步毫无压力）。
 """
@@ -34,7 +34,7 @@ class HistoryService:
         self._current: Snapshot = Snapshot({}, "初始状态")
         self._listeners: List[Any] = []
 
-    # ------------------------------------------------------------ 状态
+    # 状态
     @property
     def can_undo(self) -> bool:
         return bool(self._undo)
@@ -53,7 +53,7 @@ class HistoryService:
             return ""
         return self._redo[-1].label or "下一步操作"
 
-    # ------------------------------------------------------------ 记录
+    # 记录
     def reset(self, assignment: Optional[Mapping[str, str]] = None, label: str = "初始状态") -> None:
         self._undo.clear()
         self._redo.clear()
@@ -73,7 +73,7 @@ class HistoryService:
         self._redo.clear()
         self._notify()
 
-    # ------------------------------------------------------------ 撤销
+    # 撤销
     def undo(
         self,
         current_assignment: Mapping[str, str],
@@ -122,7 +122,7 @@ class HistoryService:
         self._notify()
         return True
 
-    # ------------------------------------------------------------ 监听
+    # 监听
     def subscribe(self, listener) -> None:
         if listener not in self._listeners:
             self._listeners.append(listener)
@@ -131,5 +131,5 @@ class HistoryService:
         for listener in list(self._listeners):
             try:
                 listener()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass

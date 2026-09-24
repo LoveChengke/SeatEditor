@@ -1,6 +1,6 @@
 """单个座位卡片控件（自绘）。
 
-状态：默认 / 悬停 / 选中 / 冲突 / 空置 / 放置目标高亮（PRD 3.5）。
+状态：默认 / 悬停 / 选中 / 冲突 / 空置 / 放置目标高亮。
 交互：单击、双击、右键、拖出学生、接收座位或学生拖入、400ms 悬停信息卡。
 """
 
@@ -162,7 +162,7 @@ class SeatWidget(QFrame):
         self._hover_timer.timeout.connect(self._show_hover_card)
         self._hover_card: Optional[SeatHoverCard] = None
 
-    # ------------------------------------------------------------ 属性
+    # 属性
     @property
     def seat(self) -> Tuple[int, int, int]:
         return self._seat
@@ -170,7 +170,7 @@ class SeatWidget(QFrame):
     def _apply_size(self) -> None:
         self.setFixedSize(QSize(self._width, self._height))
 
-    # ------------------------------------------------------------ 配置
+    # 配置
     def set_group_name(self, name: str) -> None:
         self._group_name = str(name or "")
         self.update()
@@ -222,7 +222,7 @@ class SeatWidget(QFrame):
         self._locked = bool(flag)
         self.update()
 
-    # ------------------------------------------------------------ 绘制
+    # 绘制
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -345,7 +345,7 @@ class SeatWidget(QFrame):
         )
         painter.drawText(rect, align, elided)
 
-    # ------------------------------------------------------------ 鼠标
+    # 鼠标
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
             self._press_pos = event.position().toPoint()
@@ -376,7 +376,7 @@ class SeatWidget(QFrame):
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         self.context_requested.emit(self._seat, event.globalPos())
 
-    # ------------------------------------------------------------ 悬停
+    # 悬停
     def enterEvent(self, event) -> None:  # noqa: N802
         self._hover = True
         self.update()
@@ -408,7 +408,7 @@ class SeatWidget(QFrame):
         self._hover_card.set_html(build_hover_html(self._student, seat_text, self._tag_colors, self._conflict_tip))
         self._hover_card.popup_at(self.mapToGlobal(QPoint(self.width(), 0)))
 
-    # ------------------------------------------------------------ 拖放
+    # 拖放
     def _accepts(self, mime) -> bool:
         return mime is not None and (mime.hasFormat(MIME_SEAT) or mime.hasFormat(MIME_STUDENT))
 

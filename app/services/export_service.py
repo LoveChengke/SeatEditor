@@ -17,34 +17,34 @@ class ExportError(Exception):
 class ExportService:
     """导出入口。"""
 
-    # ------------------------------------------------------------ Excel
+    # Excel
     @staticmethod
     def export_seat_table(
-        project: Project, path: str | Path, options: Optional[ExportOptions] = None  # type: ignore[valid-type]
+        project: Project, path: str | Path, options: Optional[ExportOptions] = None
     ) -> Path:
         try:
             return excel_io.export_seat_table(project, path, options)
         except excel_io.ExcelError as exc:
             raise ExportError(str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ExportError("导出 Excel 失败：%s" % exc) from exc
 
     @staticmethod
-    def export_roster(project: Project, path: str | Path) -> Path:  # type: ignore[valid-type]
+    def export_roster(project: Project, path: str | Path) -> Path:
         try:
             return excel_io.export_roster(project, path)
         except excel_io.ExcelError as exc:
             raise ExportError(str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ExportError("导出名单失败：%s" % exc) from exc
 
-    # ------------------------------------------------------------ PNG
+    # PNG
     @staticmethod
-    def export_png(widget: Any, path: str | Path, scale: int = 1) -> Path:  # type: ignore[valid-type]
+    def export_png(widget: Any, path: str | Path, scale: int = 1) -> Path:
         """把座位表控件截图保存为 PNG（``scale`` 为 1 / 2 倍）。"""
         try:
             from PyQt6.QtCore import Qt
-        except Exception as exc:  # noqa: BLE001  pragma: no cover
+        except Exception as exc:
             raise ExportError("未安装 PyQt6，无法导出图片") from exc
 
         target = Path(path)
@@ -70,8 +70,8 @@ class ExportService:
                     raise ExportError("图片保存失败：%s" % target)
         except ExportError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ExportError("导出图片失败：%s" % exc) from exc
         return target
 
-    # ------------------------------------------------------------ 汇总
+    # 汇总

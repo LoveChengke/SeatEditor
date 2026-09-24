@@ -39,7 +39,7 @@ def _from_data(data: Mapping[str, Any]) -> Project:
     data = _migrate(data)
     try:
         return Project.from_dict(data)
-    except Exception as exc:  # noqa: BLE001 - 统一转成可读错误
+    except Exception as exc:  # 统一转成可读错误
         raise ProjectStoreError("项目内容解析失败：%s" % exc) from exc
 
 
@@ -66,7 +66,7 @@ class JsonProjectStore:
     """项目文件读写。所有写入都是“先写临时文件再替换”，避免写坏原文件。"""
 
     @staticmethod
-    def save(project: Project, path: str | Path) -> Path:  # type: ignore[valid-type]
+    def save(project: Project, path: str | Path) -> Path:
         target = Path(path)
         if target.suffix.lower() != config.PROJECT_EXT:
             target = target.with_suffix(config.PROJECT_EXT)
@@ -78,7 +78,7 @@ class JsonProjectStore:
         return target
 
     @staticmethod
-    def load(path: str | Path) -> Project:  # type: ignore[valid-type]
+    def load(path: str | Path) -> Project:
         source = Path(path)
         if not source.exists():
             raise ProjectStoreError("文件不存在：%s" % source)
@@ -117,7 +117,7 @@ class JsonProjectStore:
                 pass
             raise ProjectStoreError("保存文件失败：%s" % exc) from exc
 
-    # ------------------------------------------------------------ 自动保存
+    # 自动保存
     @staticmethod
     def autosave(project: Project) -> Optional[Path]:
         """崩溃恢复用的临时保存；失败时静默返回 None。"""
@@ -126,7 +126,7 @@ class JsonProjectStore:
             payload = dumps(project)
             JsonProjectStore._atomic_write(config.AUTOSAVE_FILE, payload)
             return config.AUTOSAVE_FILE
-        except Exception:  # noqa: BLE001 - 自动保存不应打断用户操作
+        except Exception:  # 自动保存不应打断用户操作
             return None
 
     @staticmethod

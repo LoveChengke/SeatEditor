@@ -87,7 +87,7 @@ def _register(spec: RuleSpec) -> RuleSpec:
     return spec
 
 
-# ------------------------------------------------------------------ 硬约束
+# 硬约束
 _register(RuleSpec(
     kind=RuleKind.FIXED_SEAT, type=HARD,
     label="固定座位",
@@ -141,7 +141,7 @@ _register(RuleSpec(
     ),
 ))
 
-# ------------------------------------------------------------------ 软约束
+# 软约束
 _register(RuleSpec(
     kind=RuleKind.ATTR_ORDER, type=SOFT,
     label="属性排序",
@@ -270,7 +270,7 @@ class Rule:
         except (TypeError, ValueError):
             self.weight = 1.0
 
-    # ------------------------------------------------------------ 便捷属性
+    # 便捷属性
     @property
     def is_hard(self) -> bool:
         return self.type == HARD
@@ -297,7 +297,7 @@ class Rule:
     def selection_id(self) -> str:
         return str(self.params.get("selection") or "").strip()
 
-    # ------------------------------------------------------------ 校验
+    # 校验
     def validate(self) -> List[str]:
         """返回错误信息列表，空列表表示合法。"""
         errors: List[str] = []
@@ -335,7 +335,7 @@ class Rule:
     def target_sid_b(self) -> str:
         return str(self.params.get("sid_b") or "").strip()
 
-    # ------------------------------------------------------------ 序列化
+    # 序列化
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
             "id": self.id,
@@ -375,7 +375,7 @@ def make_rule(kind: str) -> Optional[Rule]:
     return Rule(make_rule_id(), spec.type, kind, params, True, spec.default_weight)
 
 
-# ------------------------------------------------------------------ 描述
+# 描述
 def describe_rule(
     rule: Rule,
     student_name: Optional[Callable[[str], str]] = None,
@@ -435,11 +435,11 @@ def _seat_text(seat: Any) -> str:
     try:
         g, r, c = str(seat).split("-")
         return "第 %d 组 第 %d 排 第 %d 列" % (int(g) + 1, int(r) + 1, int(c) + 1)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return str(seat)
 
 
-# ------------------------------------------------------------------ 冲突
+# 冲突
 @dataclass
 class Violation:
     """一条硬约束违反记录。"""
@@ -463,7 +463,7 @@ class Violation:
             "severity": self.severity,
         }
 
-    def __str__(self) -> str:  # pragma: no cover - 调试用
+    def __str__(self) -> str:  # 调试用
         return self.message or self.rule_label
 
 

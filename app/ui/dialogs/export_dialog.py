@@ -109,7 +109,7 @@ class ExportDialog(QDialog):
         self._excel_box.setEnabled(is_excel)
         self._png_box.setEnabled(not is_excel)
 
-    # ------------------------------------------------------------ 结果
+    # 结果
     def _collect(self) -> None:
         self._on_mode_changed()
         options = self.options
@@ -132,7 +132,7 @@ class ExportDialog(QDialog):
             path, _selected = QFileDialog.getSaveFileName(
                 self, "选择保存位置", self._default_path(), filter_text
             )
-        except Exception as exc:  # noqa: BLE001 - 文件对话框异常不应崩溃
+        except Exception as exc:  # 文件对话框异常不应崩溃
             QMessageBox.warning(self, "无法选择保存位置", "打开保存对话框失败：%s" % exc)
             return ""
         return str(path or "")

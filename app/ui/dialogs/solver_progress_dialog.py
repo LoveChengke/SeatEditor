@@ -82,7 +82,7 @@ class SolverProgressDialog(QDialog):
         buttons.addWidget(self._stop_btn)
         root.addLayout(buttons)
 
-    # ------------------------------------------------------------ 生命周期
+    # 生命周期
     def showEvent(self, event) -> None:  # noqa: N802 - Qt 命名
         super().showEvent(event)
         if not self._started and not self._cancelled:
@@ -102,7 +102,7 @@ class SolverProgressDialog(QDialog):
             QMessageBox.warning(self, "无法开始排位", str(exc))
             self.reject()
             return
-        except Exception as exc:  # noqa: BLE001 - 任何异常都转成友好提示
+        except Exception as exc:  # 任何异常都转成友好提示
             QMessageBox.warning(self, "无法开始排位", "排位初始化失败：%s" % exc)
             self.reject()
             return
@@ -115,7 +115,7 @@ class SolverProgressDialog(QDialog):
             return
         try:
             finished = solver.iterate(SOLVER_CHUNK)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._timer.stop()
             QMessageBox.warning(self, "排位中断", "排位过程出现异常：%s" % exc)
             self.reject()
@@ -131,7 +131,7 @@ class SolverProgressDialog(QDialog):
         report = solver.report
         try:
             self._progress.setValue(int(solver.progress() * 100))
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         self._restart_label.setText(str(report.restarts))
         self._score_label.setText(self._current_score(solver))
@@ -143,7 +143,7 @@ class SolverProgressDialog(QDialog):
             return "—"
         try:
             return "%.1f 分" % self._engine.evaluate(solver.best_assignment).score
-        except Exception:  # noqa: BLE001
+        except Exception:
             return "—"
 
     def _capture_best(self) -> None:
@@ -154,7 +154,7 @@ class SolverProgressDialog(QDialog):
         try:
             if solver.best_assignment:
                 self.solution = solver.best_solution()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     def _stop(self) -> None:
@@ -168,13 +168,13 @@ class SolverProgressDialog(QDialog):
         if solver is not None:
             try:
                 self.solution = solver.best_solution()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 self.solution = None
         self._progress.setValue(100)
         self._stop_btn.setEnabled(False)
         self.accept()
 
-    # ------------------------------------------------------------ 交互
+    # 交互
     def _stop_by_user(self) -> None:
         self._stop()
         self._capture_best()

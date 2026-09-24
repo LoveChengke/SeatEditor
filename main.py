@@ -23,7 +23,7 @@ def _install_excepthook() -> None:
     """未捕获异常：写日志 + 弹窗提示，不让教师看到 traceback。"""
     log_path = config.AUTOSAVE_DIR / "error.log"
 
-    def hook(exc_type, exc_value, exc_tb) -> None:  # noqa: ANN001
+    def hook(exc_type, exc_value, exc_tb) -> None:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_tb)
             return
@@ -44,7 +44,7 @@ def _install_excepthook() -> None:
                     "详细信息已记录到：\n%s\n\n"
                     "建议先保存项目（Ctrl+S）后重试。" % (exc_value, log_path),
                 )
-        except Exception:  # noqa: BLE001
+        except Exception:
             sys.stderr.write(detail)
 
     sys.excepthook = hook
@@ -57,7 +57,7 @@ def main(argv=None) -> int:
     try:
         from PyQt6.QtGui import QFont
         from PyQt6.QtWidgets import QApplication
-    except ImportError as exc:  # pragma: no cover - 环境问题
+    except ImportError as exc:  # 环境问题
         sys.stderr.write(
             "未安装 PyQt6（%s）。\n请先执行：pip install -r requirements.txt\n" % exc
         )

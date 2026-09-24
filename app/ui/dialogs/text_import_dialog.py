@@ -84,13 +84,13 @@ class TextImportDialog(QDialog):
         box.rejected.connect(self.reject)
         root.addWidget(box)
 
-    # ------------------------------------------------------------ 解析
+    # 解析
     def _parse(self, *_args) -> List[Student]:
         try:
             students, problems = StudentService.parse_text(
                 self._text.toPlainText(), str(self._gender_combo.currentData() or "")
             )
-        except Exception as exc:  # noqa: BLE001 - 解析异常转成友好提示
+        except Exception as exc:  # 解析异常转成友好提示
             self._result_label.setText("解析失败：%s" % exc)
             self._problem_label.setText("")
             return []

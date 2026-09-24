@@ -15,7 +15,7 @@ from .rule import HARD, Rule, Violation
 from .selection import Selection, make_selection_id
 from .student import Student, attr_names
 
-# ------------------------------------------------------------------ 事件名
+# 事件名
 EV_LAYOUT = "layout"
 EV_STUDENTS = "students"
 EV_TAGS = "tags"
@@ -89,7 +89,7 @@ class Project:
         self._listeners: List[Callable[[str, Any], None]] = []
         self._suspend = 0
 
-    # ------------------------------------------------------------ 观察者
+    # 观察者
     def subscribe(self, listener: Callable[[str, Any], None]) -> None:
         if listener not in self._listeners:
             self._listeners.append(listener)
@@ -105,7 +105,7 @@ class Project:
         for listener in list(self._listeners):
             try:
                 listener(event, payload)
-            except Exception:  # noqa: BLE001 - 监听器异常不应打断业务
+            except Exception:  # 监听器异常不应打断业务
                 pass
 
     def mark_clean(self) -> None:
@@ -129,7 +129,7 @@ class Project:
         """批量修改期间挂起通知：``with project.suspend(): ...``"""
         return Project._Suspend(self)
 
-    # ------------------------------------------------------------ 学生
+    # 学生
     def rebuild_index(self) -> None:
         self._student_index = {s.sid: s for s in self.students}
 
@@ -211,7 +211,7 @@ class Project:
     def attr_names(self) -> List[str]:
         return attr_names(self.students)
 
-    # ------------------------------------------------------------ 标签
+    # 标签
     def tag_names(self) -> List[str]:
         return [t.name for t in self.tags]
 
@@ -293,7 +293,7 @@ class Project:
         self.notify(EV_TAGS)
         return True
 
-    # ------------------------------------------------------------ 选区
+    # 选区
     def get_selection(self, selection_id: str) -> Optional[Selection]:
         return self._selection_index.get(selection_id)
 
@@ -343,7 +343,7 @@ class Project:
     def rebuild_selection_index(self) -> None:
         self._selection_index = {s.id: s for s in self.selections}
 
-    # ------------------------------------------------------------ 规则
+    # 规则
     def add_rule(self, rule: Rule) -> bool:
         if any(r.id == rule.id for r in self.rules):
             return False
@@ -371,7 +371,7 @@ class Project:
     def soft_rules(self) -> List[Rule]:
         return [r for r in self.rules if r.is_soft and r.enabled]
 
-    # ------------------------------------------------------------ 分配
+    # 分配
     def sanitize_assignment(self) -> List[str]:
         """清洗分配结果，返回发现的问题列表。"""
         from .assignment import is_valid
@@ -383,7 +383,7 @@ class Project:
     def seat_of(self, sid: str) -> Optional[Coord]:
         return seat_of(self.assignment, sid)
 
-    # ------------------------------------------------------------ 轮换历史
+    # 轮换历史
     def push_history(self, label: str = "", week: Optional[int] = None) -> RotationRecord:
         if week is None:
             week = (max([r.week for r in self.history]) + 1) if self.history else 1
@@ -398,7 +398,7 @@ class Project:
                 return record
         return None
 
-    # ------------------------------------------------------------ 序列化
+    # 序列化
     def to_dict(self) -> Dict[str, Any]:
         return {
             "version": "1.0",
@@ -454,7 +454,7 @@ class Project:
         project.mark_clean()
         return project
 
-    # ------------------------------------------------------------ 摘要
+    # 摘要
     def summary(self) -> Dict[str, Any]:
         return {
             "groups": self.layout.group_count,

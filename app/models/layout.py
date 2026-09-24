@@ -96,7 +96,7 @@ class Layout:
         self.disabled_seats = cleaned
         self._reindex()
 
-    # ------------------------------------------------------------ 基础
+    # 基础
     def _reindex(self) -> None:
         """保证分组 id 与列表下标一致。"""
         for gi, group in enumerate(self.groups):
@@ -162,7 +162,7 @@ class Layout:
         group = self.groups[g]
         return neighbors((g, r, c), group.rows, group.cols)
 
-    # ------------------------------------------------------------ 排 / 列
+    # 排 / 列
     @property
     def max_rows(self) -> int:
         return max([g.rows for g in self.groups], default=0)
@@ -199,7 +199,7 @@ class Layout:
             base += self.groups[i].size
         return base + r * self.groups[g].cols + c
 
-    # ------------------------------------------------------------ 分组编辑
+    # 分组编辑
     def add_group(self, name: str = "", rows: int = 6, cols: int = 2, gap_after: int = 1) -> Optional[SeatGroup]:
         if len(self.groups) >= MAX_GROUPS:
             return None
@@ -226,7 +226,7 @@ class Layout:
         self._reindex()
         return True
 
-    # ------------------------------------------------------------ 序列化
+    # 序列化
     def to_dict(self) -> Dict[str, Any]:
         return {
             "groups": [g.to_dict() for g in self.groups],

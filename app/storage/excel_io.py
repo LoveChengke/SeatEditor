@@ -24,9 +24,9 @@ try:  # openpyxl 缺失时给出友好提示而不是 ImportError 崩溃
     from openpyxl.utils import get_column_letter
 
     OPENPYXL_AVAILABLE = True
-except Exception:  # noqa: BLE001  pragma: no cover
-    Workbook = None  # type: ignore[assignment]
-    load_workbook = None  # type: ignore[assignment]
+except Exception:  # 没有 openpyxl 就降级：相关函数会抛 ExcelError
+    Workbook = None
+    load_workbook = None
     OPENPYXL_AVAILABLE = False
 
 
@@ -53,7 +53,7 @@ FIELD_LABELS = {
 }
 
 
-# ------------------------------------------------------------------ 导入
+# 导入
 @dataclass
 class SheetPreview:
     """导入映射对话框需要的预览数据。"""
@@ -178,7 +178,7 @@ def _guess_attr_name(header: str) -> str:
     return cleaned or text
 
 
-def read_preview(path: str | Path, sheet: str = "") -> SheetPreview:  # type: ignore[valid-type]
+def read_preview(path: str | Path, sheet: str = "") -> SheetPreview:
     """读取工作簿预览（表头 + 前若干行）。"""
     _require_openpyxl()
     source = Path(path)
@@ -186,7 +186,7 @@ def read_preview(path: str | Path, sheet: str = "") -> SheetPreview:  # type: ig
         raise ExcelError("文件不存在：%s" % source)
     try:
         workbook = load_workbook(filename=str(source), read_only=True, data_only=True)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ExcelError("无法打开 Excel 文件：%s" % exc) from exc
     try:
         names = list(workbook.sheetnames)
@@ -337,7 +337,7 @@ def build_students(
     return result
 
 
-# ------------------------------------------------------------------ 导出
+# 导出
 @dataclass
 class ExportOptions:
     """座位表导出选项。"""
@@ -373,7 +373,7 @@ def _seat_cell_text(project: Project, seat_key: str, options: ExportOptions) -> 
     return text, color
 
 
-def export_seat_table(project: Project, path: str | Path, options: Optional[ExportOptions] = None) -> Path:  # type: ignore[valid-type]
+def export_seat_table(project: Project, path: str | Path, options: Optional[ExportOptions] = None) -> Path:
     """导出座位表（主表 + 名单 + 规则说明）。"""
     _require_openpyxl()
     options = options or ExportOptions()
@@ -471,7 +471,7 @@ def export_seat_table(project: Project, path: str | Path, options: Optional[Expo
 
     try:
         workbook.save(str(target))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ExcelError("保存 Excel 失败：%s" % exc) from exc
     finally:
         workbook.close()
@@ -571,7 +571,7 @@ def _write_rules(workbook, project: Project) -> None:
             cell.font = Font(name="微软雅黑", size=11)
 
 
-def export_roster(project: Project, path: str | Path) -> Path:  # type: ignore[valid-type]
+def export_roster(project: Project, path: str | Path) -> Path:
     """只导出学生名单。"""
     _require_openpyxl()
     target = Path(path)
@@ -600,7 +600,7 @@ def export_roster(project: Project, path: str | Path) -> Path:  # type: ignore[v
         sheet.column_dimensions[get_column_letter(col)].width = 16
     try:
         workbook.save(str(target))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise ExcelError("保存 Excel 失败：%s" % exc) from exc
     finally:
         workbook.close()

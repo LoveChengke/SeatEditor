@@ -76,7 +76,7 @@ class LayoutEditorDialog(QDialog):
         self._rebuild_preview()
         self._fit_to_content()
 
-    # ------------------------------------------------------------ 界面
+    # 界面
     def _build_ui(self) -> None:
         self._loading = True
         root = QVBoxLayout(self)
@@ -241,7 +241,7 @@ class LayoutEditorDialog(QDialog):
             height = max(min_height, min(height, available.height() - 60))
         self.resize(width, height)
 
-    # ------------------------------------------------------------ 数据同步
+    # 数据同步
     def _group_at(self, row: int) -> Optional[SeatGroup]:
         if 0 <= int(row) < len(self._layout.groups):
             return self._layout.groups[int(row)]
@@ -318,7 +318,7 @@ class LayoutEditorDialog(QDialog):
         else:
             timer.start()
 
-    # ------------------------------------------------------------ 交互
+    # 交互
     def _on_name_edited(self, text: str) -> None:
         if self._loading:
             return
@@ -367,7 +367,7 @@ class LayoutEditorDialog(QDialog):
             return
         try:
             fresh = template_layout(index)
-        except Exception:  # noqa: BLE001 - 模板异常不应崩溃
+        except Exception:  # 模板异常不应崩溃
             return
         disabled = set(self._layout.disabled_seats)
         self._layout = fresh
@@ -407,7 +407,7 @@ class LayoutEditorDialog(QDialog):
         self._refresh_group_list(row + delta)
         self._rebuild_preview()
 
-    # ------------------------------------------------------------ 预览
+    # 预览
     def _podium_widget(self) -> QWidget:
         frame = QFrame()
         frame.setFixedHeight(PODIUM_HEIGHT)
@@ -486,7 +486,7 @@ class LayoutEditorDialog(QDialog):
         if layout.podium_side == "bottom":
             grid.addWidget(self._podium_widget(), seat_top + max_rows, 0, 1, max(1, total_cols))
 
-    # ------------------------------------------------------------ 结果
+    # 结果
     def accept(self) -> None:
         self._layout.prune_disabled()
         if not self._layout.groups:

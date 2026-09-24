@@ -40,10 +40,10 @@ class TagChip(QFrame):
             close.setStyleSheet("color: %s; background: transparent;" % self._text_color())
             close.setCursor(Qt.CursorShape.PointingHandCursor)
             layout.addWidget(close)
-            close.mousePressEvent = self._on_close  # type: ignore[assignment]
+            close.mousePressEvent = self._on_close
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
 
-    # ------------------------------------------------------------ 属性
+    # 属性
     @property
     def name(self) -> str:
         return self._name
@@ -69,7 +69,7 @@ class TagChip(QFrame):
         painter.drawPath(path)
         painter.end()
 
-    def _on_close(self, event) -> None:  # noqa: ANN001
+    def _on_close(self, event) -> None:
         self.removed.emit(self._name)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802

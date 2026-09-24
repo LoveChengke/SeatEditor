@@ -51,12 +51,12 @@ class StudentTableModel(QAbstractTableModel):
         if project is not None:
             project.subscribe(self._on_project_event)
 
-    # ------------------------------------------------------------ 项目
+    # 项目
     def _on_project_event(self, event: str, payload) -> None:
         if event in (EV_ASSIGNMENT, EV_STUDENTS, EV_TAGS, "any"):
             self.refresh()
 
-    # ------------------------------------------------------------ 行数据
+    # 行数据
     def set_students(self, students: Sequence[Student]) -> None:
         self.beginResetModel()
         self._students = list(students or [])
@@ -91,7 +91,7 @@ class StudentTableModel(QAbstractTableModel):
         reverse = self._sort_order == Qt.SortOrder.DescendingOrder
         self._students = self._service.sorted_students(self._students, key, reverse)
 
-    # ------------------------------------------------------------ Qt 接口
+    # Qt 接口
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
         return 0 if parent.isValid() else len(self._students)
 
@@ -188,7 +188,7 @@ class StudentTableModel(QAbstractTableModel):
             return Color.TEXT_SECONDARY
         return project.tag_color(student.tags[0])
 
-    # ------------------------------------------------------------ 排序
+    # 排序
     def sort(self, column: int, order: Qt.SortOrder = Qt.SortOrder.AscendingOrder) -> None:
         self._sort_column = int(column)
         self._sort_order = order
@@ -227,7 +227,7 @@ class StudentTableView(QTableView):
         # 因此列宽/列模式统一放到 setModel 之后再配置。
         self.horizontalHeader().setStretchLastSection(True)
 
-    # ------------------------------------------------------------ 模型
+    # 模型
     def setModel(self, model) -> None:  # noqa: N802 - Qt 命名
         super().setModel(model)
         self._configure_header()
@@ -250,7 +250,7 @@ class StudentTableView(QTableView):
         self.setColumnWidth(COL_TAGS, 110)
         self.setColumnWidth(COL_ATTRS, 120)
 
-    # ------------------------------------------------------------ 拖拽
+    # 拖拽
     def selected_sids(self) -> List[str]:
         model = self.model()
         if model is None:
@@ -282,7 +282,7 @@ class StudentTableView(QTableView):
         if student is not None:
             self.double_clicked.emit(student.sid)
 
-    # ------------------------------------------------------------ 便捷
+    # 便捷
     def select_sid(self, sid: str) -> None:
         model = self.model()
         if model is None or not hasattr(model, "row_of_sid"):

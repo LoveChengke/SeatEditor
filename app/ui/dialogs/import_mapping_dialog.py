@@ -37,7 +37,7 @@ def _guess_attr_name(header: str) -> str:
     if callable(guess):
         try:
             return str(guess(header) or header)
-        except Exception:  # noqa: BLE001 - 推测失败不影响映射
+        except Exception:  # 推测失败不影响映射
             return str(header)
     return str(header)
 
@@ -159,7 +159,7 @@ class ImportMappingDialog(QDialog):
         total = int(getattr(self.preview, "total_rows", 0) or 0)
         return total or len(list(getattr(self.preview, "rows", []) or []))
 
-    # ------------------------------------------------------------ 结果
+    # 结果
     def _collect(self) -> Dict[str, str]:
         mapping: Dict[str, str] = {}
         for header, combo in self._combos.items():

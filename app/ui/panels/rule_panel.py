@@ -1,4 +1,4 @@
-"""规则面板（PRD F4.1）。
+"""规则面板。
 
 「硬约束 / 软约束」两个分组列表，每项带勾选框与「人话描述」；
 工具栏提供「添加规则」（按 ``HARD_KINDS`` / ``SOFT_KINDS`` 分组）、
@@ -45,7 +45,7 @@ class RulePanel(ProjectPanel):
         self.refresh()
         project.subscribe(self._on_project_event)
 
-    # ------------------------------------------------------------ 构建界面
+    # 构建界面
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -112,7 +112,7 @@ class RulePanel(ProjectPanel):
                 action.triggered.connect(lambda _checked=False, k=kind: self._add_rule(k))
         return menu
 
-    # ------------------------------------------------------------ 对外接口
+    # 对外接口
     def refresh(self) -> None:
         """按 ``project.rules`` 重建两个列表（尽量保留原选中项）。"""
         if self._project is None:
@@ -125,7 +125,7 @@ class RulePanel(ProjectPanel):
             self._fill(self._soft_list, [r for r in rules if r.is_soft])
             self._hard_title.setText("硬约束（%d）" % self._hard_list.count())
             self._soft_title.setText("软约束（%d）" % self._soft_list.count())
-        except Exception as exc:  # noqa: BLE001 - 刷新失败不应崩溃
+        except Exception as exc:  # 刷新失败不应崩溃
             self._error_label.setText("规则列表刷新失败：%s" % exc)
         finally:
             self._updating = False
@@ -147,13 +147,13 @@ class RulePanel(ProjectPanel):
     def _describe(self, rule: Rule) -> str:
         try:
             text = describe_rule(rule, self._project.student_name, self._project.selection_name)
-        except Exception:  # noqa: BLE001
+        except Exception:
             text = rule.label
         if rule.is_soft:
             text = "%s　（权重 %g）" % (text, rule.weight)
         return text
 
-    # ------------------------------------------------------------ 选中项
+    # 选中项
     def _rule_of_item(self, item: Optional[QListWidgetItem]) -> Optional[Rule]:
         if item is None or self._project is None:
             return None
@@ -185,7 +185,7 @@ class RulePanel(ProjectPanel):
                     widget.setCurrentItem(item)
                     return
 
-    # ------------------------------------------------------------ 勾选
+    # 勾选
     def _on_item_changed(self, item: QListWidgetItem) -> None:
         if self._updating:
             return
@@ -198,11 +198,11 @@ class RulePanel(ProjectPanel):
         rule.enabled = enabled
         try:
             self._project.notify(EV_RULES)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._error_label.setText("规则状态保存失败：%s" % exc)
         self.rules_changed.emit()
 
-    # ------------------------------------------------------------ 增删改
+    # 增删改
     def _add_rule(self, kind: str) -> None:
         rule = make_rule(kind)
         if rule is None:
@@ -215,7 +215,7 @@ class RulePanel(ProjectPanel):
             if not self._project.add_rule(result):
                 self._warn("规则添加失败（可能是 ID 冲突）。")
                 return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("规则添加失败：%s" % exc)
             return
         self._error_label.setText("")
@@ -239,7 +239,7 @@ class RulePanel(ProjectPanel):
                     self._project.add_rule(rule)   # 回滚，避免规则丢失
                     self._warn("规则保存失败，已还原原有规则。")
                     return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("规则保存失败：%s" % exc)
             return
         self._error_label.setText("")
@@ -257,7 +257,7 @@ class RulePanel(ProjectPanel):
             if not self._project.remove_rule(rule.id):
                 self._warn("该规则已不存在。")
                 return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("删除规则失败：%s" % exc)
             return
         self._error_label.setText("")
@@ -268,7 +268,7 @@ class RulePanel(ProjectPanel):
         """懒加载规则编辑对话框；缺失时给出提示而不是崩溃。"""
         try:
             from ..dialogs.rule_edit_dialog import RuleEditDialog
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("规则编辑功能不可用：%s" % exc)
             return None
         try:
@@ -276,20 +276,20 @@ class RulePanel(ProjectPanel):
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return None
             result = dialog.result_rule
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._warn("规则编辑失败：%s" % exc)
             return None
         if result is None:
             return None
         return result
 
-    # ------------------------------------------------------------ 项目事件
+    # 项目事件
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_RULES, EV_TAGS, EV_SELECTIONS, EV_STUDENTS, EV_ANY):
             return
         self._schedule_refresh()
 
-    # ------------------------------------------------------------ 工具
+    # 工具
     def _confirm(self, text: str, title: str) -> bool:
         return confirm(self, text, title)
 

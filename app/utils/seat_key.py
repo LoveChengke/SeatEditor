@@ -33,7 +33,7 @@ def parse_key(key: str) -> Seat:
     return (g, r, c)
 
 
-def try_parse_key(key) -> Seat | None:  # type: ignore[valid-type]
+def try_parse_key(key) -> Seat | None:
     try:
         return parse_key(key)
     except (ValueError, TypeError):
@@ -61,7 +61,7 @@ def neighbors(seat: Seat, rows: int, cols: int) -> List[Seat]:
     return result
 
 
-def dict_to_assignment(raw: Dict[str, str] | None) -> Dict[str, str]:  # type: ignore[valid-type]
+def dict_to_assignment(raw: Dict[str, str] | None) -> Dict[str, str]:
     """清洗从 JSON 读入的 assignment。"""
     out: Dict[str, str] = {}
     if not raw:

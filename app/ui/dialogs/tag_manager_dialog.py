@@ -112,11 +112,11 @@ class TagManagerDialog(QDialog):
         box.rejected.connect(self.reject)
         root.addWidget(box)
 
-    # ------------------------------------------------------------ 数据
+    # 数据
     def _usage(self) -> dict:
         try:
             return dict(self._service.tag_usage())
-        except Exception:  # noqa: BLE001 - 统计失败不应崩溃
+        except Exception:  # 统计失败不应崩溃
             return {}
 
     def _refresh(self, select: str = "") -> None:
@@ -145,7 +145,7 @@ class TagManagerDialog(QDialog):
             QMessageBox.information(self, "请先选择", "请先在列表中选择一个标签。")
         return name
 
-    # ------------------------------------------------------------ 操作
+    # 操作
     def _add_tag(self) -> None:
         name = self._name_edit.text().strip()
         if not name:
@@ -156,7 +156,7 @@ class TagManagerDialog(QDialog):
             return
         try:
             ok = self.project.add_tag(name)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             QMessageBox.warning(self, "添加失败", "无法新增标签：%s" % exc)
             return
         if not ok:
