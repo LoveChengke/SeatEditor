@@ -1351,45 +1351,13 @@ class MainWindow(QMainWindow):
         self._last_solution = None
         self._pending_rotation_preview = None
         self.grid.set_project(project)
-        self._set_panel_project(self.student_panel, self.student_service)
-        self._set_panel_project(self.rule_panel, None)
-        self._set_panel_project(self.selection_panel, None)
-        self._set_panel_project(self.rotation_panel, None)
+        self.student_panel.set_project(self.project, self.student_service)
+        self.rule_panel.set_project(self.project)
+        self.selection_panel.set_project(self.project)
+        self.rotation_panel.set_project(self.project)
         self._refresh_all()
         self._sync_view_actions()
         self.grid.set_locked_seats(self._locked_seats)
-
-    def _set_panel_project(self, panel, service=None) -> None:
-        """把面板切到当前项目（面板实现 set_project；否则退化为直接赋值 + refresh）。"""
-        setter = getattr(panel, "set_project", None)
-        if callable(setter):
-            try:
-                if service is not None:
-                    setter(self.project, service)
-                else:
-                    setter(self.project)
-                return
-            except TypeError:
-                try:
-                    setter(self.project)
-                    return
-                except Exception:  # noqa: BLE001
-                    pass
-            except Exception:  # noqa: BLE001
-                pass
-        for attr, value in (("project", self.project), ("service", service)):
-            if value is None:
-                continue
-            try:
-                setattr(panel, attr, value)
-            except Exception:  # noqa: BLE001
-                pass
-        refresh = getattr(panel, "refresh", None)
-        if callable(refresh):
-            try:
-                refresh()
-            except Exception:  # noqa: BLE001
-                pass
 
     # ------------------------------------------------------------ 最近文件
     def _settings(self) -> QSettings:

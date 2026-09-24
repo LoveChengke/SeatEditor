@@ -182,23 +182,18 @@ class StudentPanel(ProjectPanel):
         return menu
 
     # ------------------------------------------------------------ 对外接口
-    def set_project(self, project: Project, service: Optional[StudentService] = None) -> None:
-        """切换到另一个 :class:`Project`（新建 / 打开项目时由主窗口调用）。"""
-        if project is None:
-            return
+    def _on_project_change(self, project: Project,
+                           service: Optional[StudentService] = None) -> None:
+        """重建表格模型；旧模型也要退订旧项目，否则两套数据会互相刷新。"""
         old_project, old_model = self._project, self._model
         if old_project is not None:
             try:
-                # 断开旧模型与面板对旧项目的订阅，避免两套数据互相刷新
                 old_project.unsubscribe(old_model._on_project_event)  # type: ignore[attr-defined]
-                old_project.unsubscribe(self._on_project_event)
             except Exception:  # noqa: BLE001
                 pass
-        self._project = project
         self._service = service if service is not None else StudentService(project)
         self._selected_sids = []
         self._checked_tags = set()
-        self._refresh_pending = False
         self._debounce.stop()
 
         old_model.setParent(None)
@@ -206,8 +201,6 @@ class StudentPanel(ProjectPanel):
         self._model = StudentTableModel(project, self._service, self)
         self._view.setModel(self._model)
         self._view.selectionModel().selectionChanged.connect(self._on_selection_changed)
-        project.subscribe(self._on_project_event)
-        self.refresh()
 
     def refresh(self) -> None:
         """按当前筛选条件重建列表与标签菜单。"""

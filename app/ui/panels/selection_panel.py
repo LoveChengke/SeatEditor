@@ -102,20 +102,8 @@ class SelectionPanel(ProjectPanel):
         root.addLayout(quick_row)
 
     # ------------------------------------------------------------ 对外接口
-    def set_project(self, project: Project, service=None) -> None:
-        """切换到另一个 :class:`Project`（新建 / 打开项目时由主窗口调用）。"""
-        if project is None:
-            return
-        if self._project is not None:
-            try:
-                self._project.unsubscribe(self._on_project_event)
-            except Exception:  # noqa: BLE001
-                pass
-        self._project = project
+    def _on_project_change(self, project: Project, service=None) -> None:
         self._current_seats = set()
-        self._refresh_pending = False
-        project.subscribe(self._on_project_event)
-        self.refresh()
 
     def refresh(self) -> None:
         """按 ``project.selections`` 重建选区列表。"""
