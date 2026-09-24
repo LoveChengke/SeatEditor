@@ -1,11 +1,10 @@
-"""规则面板。
+"""规则面板：硬约束 / 软约束两个分组列表，每项带勾选框与人话描述。
 
-「硬约束 / 软约束」两个分组列表，每项带勾选框与「人话描述」；
 工具栏提供「添加规则」（按 ``HARD_KINDS`` / ``SOFT_KINDS`` 分组）、
-「编辑」、「删除」。勾选 / 取消勾选直接切换 ``rule.enabled``。
+「编辑」「删除」；勾选直接切换 ``rule.enabled``。
 
-这是契约里唯一允许面板直接改项目的例外：只做
-``project.add_rule`` / ``project.remove_rule`` / ``project.notify("rules")``。
+注意：这是契约里唯一允许面板直接改项目的例外——只做 ``add_rule`` /
+``remove_rule`` / ``notify("rules")`` 这三件事，别在这里加别的写操作。
 """
 
 from __future__ import annotations

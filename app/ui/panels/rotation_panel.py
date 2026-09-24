@@ -1,10 +1,7 @@
-"""自动轮换面板。
+"""自动轮换面板：模式与参数、预览、应用、轮换历史与回退。
 
-模式选择（区域轮换 / 按排平移 / 按列平移 / 自定义向量）、参数控件、
-「预览」生成 :class:`RotationPlan`、「应用轮换」、轮换历史与回退。
-
-面板只做**预览**：``RotationService`` 生成方案后发 ``preview_ready``，
-应用与回退都由主窗口执行。
+面板只做**预览**：``RotationService`` 生成 :class:`RotationPlan` 后发
+``preview_ready``，真正的应用与回退由主窗口执行。
 """
 
 from __future__ import annotations

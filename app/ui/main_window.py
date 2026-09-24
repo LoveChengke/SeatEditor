@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(200, self._maybe_recover)
         QTimer.singleShot(400, self._maybe_welcome)
 
-    # ============================================================ 界面搭建
+    # 界面搭建
     def _build_central(self) -> None:
         self.grid = SeatGridView(self)
         self.setCentralWidget(self.grid)
@@ -347,7 +347,7 @@ class MainWindow(QMainWindow):
     def toast(self, message: str, timeout: int = 4000) -> None:
         self.statusBar().showMessage(message, timeout)
 
-    # ============================================================ 项目事件
+    # 项目事件
     def _on_project_event(self, event: str, payload) -> None:
         if self._suppress_events:
             return
@@ -379,7 +379,7 @@ class MainWindow(QMainWindow):
         name = os.path.basename(self.project.path) if self.project.path else "未命名项目"
         return "%s%s — %s" % ("*" if self.project.dirty else "", name, config.APP_NAME)
 
-    # ============================================================ 状态
+    # 状态
     def _update_status(self) -> None:
         layout = self.project.layout
         assigned = len([v for v in self.project.assignment.values() if v])
@@ -408,7 +408,7 @@ class MainWindow(QMainWindow):
         self.act_undo.setToolTip("撤销：%s" % self.history.undo_label() if can_undo else "没有可撤销的操作")
         self.act_redo.setToolTip("重做：%s" % self.history.redo_label() if can_redo else "没有可重做的操作")
 
-    # ============================================================ 历史
+    # 历史
     def _snapshot_layout(self) -> Dict[str, Any]:
         return self.project.layout.to_dict()
 
@@ -451,7 +451,7 @@ class MainWindow(QMainWindow):
         self._restore(snapshot)
         self.toast("已重做")
 
-    # ============================================================ 冲突
+    # 冲突
     def _engine(self) -> RuleEngine:
         return RuleEngine.from_project(self.project)
 
@@ -493,7 +493,7 @@ class MainWindow(QMainWindow):
             describe_violations(self._engine().check_hard(self.project.assignment), 8),
         )
 
-    # ============================================================ 座位操作
+    # 座位操作
     def _selected_seats(self) -> List[Coord]:
         return sorted(self.grid.selected_seats(), key=lambda s: (s[0], s[1], s[2]))
 
@@ -770,7 +770,7 @@ class MainWindow(QMainWindow):
         self.grid.set_locked_seats(self._locked_seats)
         self._update_status()
 
-    # ============================================================ 学生
+    # 学生
     def add_student(self) -> None:
         from .dialogs.student_edit_dialog import StudentEditDialog
 
@@ -867,7 +867,7 @@ class MainWindow(QMainWindow):
         dialog.exec()
         self._refresh_all()
 
-    # ============================================================ Excel
+    # Excel
     def save_roster_template(self) -> None:
         """生成 Excel 名单导入模板；教师填好后走「导入学生名单」读入。"""
         from ..storage import roster_template
@@ -1068,7 +1068,7 @@ class MainWindow(QMainWindow):
             return
         self.toast("已导出名单：%s" % target)
 
-    # ============================================================ 布局
+    # 布局
     def edit_layout(self) -> None:
         from .dialogs.layout_editor_dialog import LayoutEditorDialog
 
@@ -1096,7 +1096,7 @@ class MainWindow(QMainWindow):
         self.toast("教室布局已更新：%d 组，共 %d 个座位" % (
             self.project.layout.group_count, self.project.layout.seat_count()))
 
-    # ============================================================ 排位
+    # 排位
     def solve(self) -> None:
         if not self.project.students:
             QMessageBox.information(self, "还没有学生", "请先导入或添加学生名单，再执行一键排位。")
@@ -1152,7 +1152,7 @@ class MainWindow(QMainWindow):
         self._update_conflicts()
         self._update_status()
 
-    # ============================================================ 选区
+    # 选区
     def _on_selection_apply(self, selection_id: str) -> None:
         selection = self.project.get_selection(selection_id)
         if selection is None:
@@ -1188,7 +1188,7 @@ class MainWindow(QMainWindow):
             self.selection_panel.refresh()
             self.rule_panel.refresh()
 
-    # ============================================================ 轮换
+    # 轮换
     def _on_rotation_preview(self, plan) -> None:
         self._pending_rotation_preview = plan
         changed = []
@@ -1232,7 +1232,7 @@ class MainWindow(QMainWindow):
         else:
             self.toast("找不到第 %d 周的记录" % week)
 
-    # ============================================================ 视图
+    # 视图
     def _on_show_sid(self, flag: bool) -> None:
         if self._syncing_view:
             return
@@ -1243,7 +1243,7 @@ class MainWindow(QMainWindow):
         if self._syncing_view:
             return
         self._settings().setValue(config.SK_SHOW_GROUP_TITLE, bool(flag))
-        # 「显示组标题」属于教室布局的一部分，写回项目才会随项目保存。
+        # 写回 project.layout 才会随项目保存
         if self.project.layout.show_group_title != bool(flag):
             self.project.layout.show_group_title = bool(flag)
             self.project.notify(EV_LAYOUT)
@@ -1262,8 +1262,7 @@ class MainWindow(QMainWindow):
         for key, act in self.act_size.items():
             act.setChecked(key == name)
         self._settings().setValue(config.SK_CARD_SIZE, name)
-        # 座位卡片尺寸同样属于教室布局：写回 project.layout 才会随项目保存，
-        # 且在下次打开「教室布局」对话框时显示同一个值。
+        # 同上：座位尺寸也属于教室布局
         if self.project.layout.card_size != name:
             self.project.layout.card_size = name
             self.project.notify(EV_LAYOUT)
@@ -1285,7 +1284,7 @@ class MainWindow(QMainWindow):
         finally:
             self._syncing_view = False
 
-    # ============================================================ 文件
+    # 文件
     def new_project(self) -> None:
         if not self._confirm_discard():
             return
@@ -1460,8 +1459,7 @@ class MainWindow(QMainWindow):
         self.act_show_sid.setChecked(settings.value(config.SK_SHOW_SID, True, type=bool))
         self.act_show_selection.setChecked(
             settings.value(config.SK_SHOW_SELECTION, True, type=bool))
-        # 「座位尺寸 / 显示组标题」是教室布局的一部分，这里把上次的选择
-        # 作为新项目的默认值，之后以项目里的布局为准。
+        # 上次的选择只作为新项目的默认值，之后以项目里的布局为准
         size = str(settings.value(config.SK_CARD_SIZE, "", type=str) or "")
         if size in self.act_size:
             self.project.layout.card_size = size

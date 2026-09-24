@@ -274,7 +274,7 @@ class RuleEngine:
     def _occupant(self, assignment: Mapping[str, str], seat: Coord) -> str:
         return assignment.get(self.key_of(seat), "")
 
-    # ============================================================ 硬约束
+    # 硬约束
     def hard_terms(
         self,
         assignment: Mapping[str, str],
@@ -412,7 +412,7 @@ class RuleEngine:
                 ))
         return terms
 
-    # ============================================================ 软约束
+    # 软约束
     def soft_terms(
         self,
         assignment: Mapping[str, str],
@@ -655,7 +655,7 @@ class RuleEngine:
             terms.append(self._term(rule, _key_of([seat]), value))
         return terms
 
-    # ============================================================ 评估
+    # 评估
     def objective(
         self,
         assignment: Mapping[str, str],
