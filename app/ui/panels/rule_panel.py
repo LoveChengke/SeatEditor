@@ -100,6 +100,9 @@ class RulePanel(ProjectPanel):
 
     def _build_add_menu(self) -> QMenu:
         menu = QMenu(self)
+        guided = menu.addAction("自定义规则（向导）…")
+        guided.setToolTip("按「谁 → 要求 → 怎么样」拼一句话，向导自动挑好对应的规则种类")
+        guided.triggered.connect(lambda _checked=False: self._add_rule_via_wizard())
         for title, kinds in (("硬约束", HARD_KINDS), ("软约束", SOFT_KINDS)):
             menu.addSection(title)
             for kind in kinds:
@@ -212,6 +215,34 @@ class RulePanel(ProjectPanel):
             return
         try:
             if not self._project.add_rule(result):
+                self._warn("规则添加失败（可能是 ID 冲突）。")
+                return
+        except Exception as exc:
+            self._warn("规则添加失败：%s" % exc)
+            return
+        self._error_label.setText("")
+        self.rules_changed.emit()
+        self.refresh()
+
+    def _add_rule_via_wizard(self) -> None:
+        """自定义规则向导：教师按意图拼一条，向导映射到已有的规则种类。"""
+        try:
+            from ..dialogs.rule_wizard_dialog import RuleWizardDialog
+        except Exception as exc:
+            self._warn("自定义规则功能不可用：%s" % exc)
+            return
+        try:
+            dialog = RuleWizardDialog(self._project, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            rule = dialog.result_rule
+        except Exception as exc:
+            self._warn("自定义规则失败：%s" % exc)
+            return
+        if rule is None:
+            return
+        try:
+            if not self._project.add_rule(rule):
                 self._warn("规则添加失败（可能是 ID 冲突）。")
                 return
         except Exception as exc:
