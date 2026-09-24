@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from ..config import DEFAULT_IDLE_LIMIT, DEFAULT_TIME_LIMIT
 from ..models.assignment import Solution
 from ..models.layout import Layout
+from ..models.rule import RuleKind
 from ..models.student import Student
 from ..utils.seat_key import make_key, try_parse_key
 from ..utils.seat_key import Seat as Coord
@@ -141,7 +142,8 @@ class Solver:
         movable.sort(key=lambda s: (layout.front_row_index(s), s[0], s[2]))
         if len(free_sids) > len(movable):
             raise SolverError("可用座位不足，无法安排全部学生（可用 %d，需要 %d）" % (len(movable), len(free_sids)))
-        self._movable = sorted(movable[: len(free_sids)], key=lambda s: (s[0], s[1], s[2]))
+        chosen = self._pick_seats(movable, seated, len(free_sids))
+        self._movable = sorted(chosen, key=lambda s: (s[0], s[1], s[2]))
         self._free_sids = free_sids
 
         self._base = {make_key(coord): sid for coord, sid in seated.items()}
@@ -159,6 +161,78 @@ class Solver:
         self._deadline = 0.0
         self._finished = False
         self._prepared = True
+
+    def _pick_seats(self, movable: List[Coord], seated: Mapping[Coord, str], count: int) -> List[Coord]:
+        """从（已按“靠前优先”排好序的）候选座位里挑出这次要占用的座位。
+
+        默认就是原行为 ``movable[:count]``。但「每组人数上限」和「各组人数均衡」
+        管的是“每组占几个座位”，而搜索期间**占用的座位集合是固定的**——
+        不在这一步体现，它们对一键排位就完全没有作用。
+        """
+        limit = self._group_limit()
+        if limit is None and not self._wants_balance():
+            return movable[:count]
+
+        used: Dict[int, int] = {}
+        for coord in seated:
+            used[coord[0]] = used.get(coord[0], 0) + 1
+        room: Dict[int, int] = {}
+        for coord in movable:
+            room[coord[0]] = room.get(coord[0], 0) + 1
+
+        quota: Dict[int, int] = {}
+        for group, free in room.items():
+            if limit is None:
+                quota[group] = free
+            else:
+                quota[group] = max(0, min(free, limit - used.get(group, 0)))
+        if self._wants_balance():
+            quota = self._balance_quota(quota, used, count)
+
+        chosen: List[Coord] = []
+        for seat in movable:
+            group = seat[0]
+            if quota.get(group, 0) <= 0:
+                continue
+            quota[group] -= 1
+            chosen.append(seat)
+            if len(chosen) >= count:
+                break
+        if len(chosen) < count:
+            # 名额不够就退回原行为：不静默把学生挤掉，原因由 precheck 说出来
+            return movable[:count]
+        return chosen
+
+    def _group_limit(self) -> Optional[int]:
+        """所有「每组人数上限」规则里最严格的那个上限。"""
+        limits: List[int] = []
+        for rule in self.engine.hard_rules:
+            if rule.kind != RuleKind.GROUP_SIZE_LIMIT:
+                continue
+            try:
+                limits.append(max(1, int(rule.params.get("limit", 8))))
+            except (TypeError, ValueError):
+                limits.append(8)
+        return min(limits) if limits else None
+
+    def _wants_balance(self) -> bool:
+        return any(rule.kind == RuleKind.GROUP_BALANCE for rule in self.engine.soft_rules)
+
+    def _balance_quota(self, quota: Dict[int, int], used: Mapping[int, int], count: int) -> Dict[int, int]:
+        """把 count 个名额在各组间尽量摊平（组间人数差 ≤ 1），且不超过各组上限。
+
+        每轮把名额给「已占 + 已分配」最少的组，所以已有的占用也会被算进去。
+        """
+        result: Dict[int, int] = {group: 0 for group in quota}
+        remaining = count
+        while remaining > 0:
+            candidates = [g for g in sorted(quota) if result[g] < quota[g]]
+            if not candidates:
+                break
+            target = min(candidates, key=lambda g: (used.get(g, 0) + result[g], g))
+            result[target] += 1
+            remaining -= 1
+        return result
 
     def _randomize(self) -> Dict[str, str]:
         """随机初始化（固定 / 锁定座位先落位）。"""

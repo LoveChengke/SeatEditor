@@ -1,6 +1,6 @@
 """规则编辑对话框：表单由 ``models.rule.RULE_SPECS[kind].fields`` 动态生成。
 
-支持全部 12 种规则；控件类型由 ``F_*`` 常量决定，新增规则种类无需改这里。
+支持全部规则种类；控件类型由 ``F_*`` 常量决定，新增规则种类无需改这里。
 """
 
 from __future__ import annotations

@@ -24,9 +24,10 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from ..config import HARD_PENALTY
 from ..models.layout import Layout
-from ..models.rule import HARD, SOFT, Rule, RuleKind, RuleScore, Violation
+from ..models.rule import HARD, PAIR_KINDS, RULE_SPECS, Rule, RuleKind, RuleScore, Violation
 from ..models.selection import Selection
 from ..models.student import Student
+from ..utils.natural_sort import natural_key
 from ..utils.seat_key import make_key, try_parse_key
 from ..utils.seat_key import Seat as Coord
 
@@ -35,12 +36,9 @@ Key = Tuple[Coord, ...]
 MALE = {"男", "male", "m", "男生", "1"}
 FEMALE = {"女", "female", "f", "女生", "0", "2"}
 
-# term 只依赖“自己所在座位”的规则：增量评估时只需扫描变动座位本身
-OWN_SEAT_KINDS = frozenset({
-    RuleKind.ATTR_ORDER, RuleKind.ATTR_TIER, RuleKind.FRONT_PREFER, RuleKind.AVOID_REPEAT,
-    RuleKind.FIXED_SEAT, RuleKind.REGION_REQUIRED, RuleKind.REGION_FORBIDDEN,
-    RuleKind.FRONT_REQUIRED,
-})
+# 增量评估要扫多大范围由每条规则自己的“影响半径”决定（0 只扫变动座位本身、
+# 1 再加四邻域、2 再加整组），登记在 models/rule.py 的 RuleSpec.scope 上，
+# 引擎启动时会校验没有漏登记（见 RuleEngine._check_scopes）。
 
 
 def normalize_gender(value: str) -> str:
@@ -142,6 +140,57 @@ class RuleEngine:
         for key, sid in self.previous.items():
             if sid:
                 self._previous_by_sid[sid] = key
+        self._prev_desk_mates: Dict[str, Set[str]] = {}
+        for key, sid in self.previous.items():
+            seat = try_parse_key(key)
+            if seat is None or not sid:
+                continue
+            for mate_seat in self._desk_mates(seat):
+                mate = self.previous.get(self.key_of(mate_seat), "")
+                if mate and mate != sid:
+                    self._prev_desk_mates.setdefault(sid, set()).add(mate)
+        self._pair_cache: Dict[str, Tuple[Set[str], Set[str]]] = {}
+        self._seat_index_cache: Optional[Dict[str, Coord]] = None
+        self._group_seats_cache: Dict[int, List[Coord]] = {}
+        self._active_groups_cache: Optional[List[int]] = None
+        self._order_cache: Dict[str, List[str]] = {}
+        self._max_distance_cache: Optional[int] = None
+        # 全班男生比例：整组类规则的目标值。刻意用「全体学生」而不是「已入座学生」
+        # 算，让它是与排位完全无关的常量——否则它会在交换下变化，而没被扫到的组
+        # 的 term 不会重算，增量差就不再等于全量差。
+        known = 0
+        males = 0
+        for student in self.students.values():
+            gender = normalize_gender(student.gender)
+            if not gender:
+                continue
+            known += 1
+            if gender == "男":
+                males += 1
+        self._male_ratio = (males / float(known)) if known else 0.5
+        self._stage_cache: Dict[str, int] = {}
+        self._check_scopes()
+        # 没有整组类规则时，整组范围既没人用也不该进 affected_seats
+        self._has_group_scope = any(self._stage_of(r) == 2 for r in self.rules)
+
+    def _check_scopes(self) -> None:
+        """每条规则种类都必须登记合法的扫描半径。
+
+        漏登记会让增量评估静默算错（求解器照跑，只是结果不再等于报表里的分数），
+        所以宁可在这里响亮地失败。见 RuleSpec.scope 的注释。
+        """
+        bad = sorted(kind for kind, spec in RULE_SPECS.items() if spec.scope not in (0, 1, 2))
+        if bad:
+            raise ValueError("这些规则种类没有登记合法的 scope：%s" % ", ".join(bad))
+
+    def _stage_of(self, rule: Rule) -> int:
+        """该规则该用哪一档扫描范围（0 / 1 / 2）。"""
+        cached = self._stage_cache.get(rule.kind)
+        if cached is None:
+            spec = RULE_SPECS.get(rule.kind)
+            cached = int(spec.scope) if spec is not None and spec.scope in (0, 1, 2) else 1
+            self._stage_cache[rule.kind] = cached
+        return cached
 
     # 构造
     @classmethod
@@ -183,6 +232,15 @@ class RuleEngine:
             self._neighbor_cache[seat] = cached
         return cached
 
+    def _desk_mates(self, seat: Coord) -> List[Coord]:
+        """同桌座位：同一排左右相邻的两列（不跨排、不跨组）。"""
+        group_index = int(seat[0])
+        if not (0 <= group_index < self.layout.group_count):
+            return []
+        cols = self.layout.groups[group_index].cols
+        col = int(seat[2])
+        return [(group_index, int(seat[1]), c) for c in (col - 1, col + 1) if 0 <= c < cols]
+
     def students_with_tag(self, tag: str) -> List[str]:
         tag = str(tag or "").strip()
         if not tag:
@@ -205,6 +263,31 @@ class RuleEngine:
             result = self.students_with_tag(rule.target_tag())
         self._target_cache[rule.id] = result
         return result
+
+    def pair_sets(self, rule: Rule) -> Tuple[Set[str], Set[str]]:
+        """``(对象 A 的学生集合, 对象 B 的学生集合)``，每个端点都是学生优先于标签。"""
+        cached = self._pair_cache.get(rule.id)
+        if cached is None:
+            cached = (self._side_sids(rule, "a"), self._side_sids(rule, "b"))
+            self._pair_cache[rule.id] = cached
+        return cached
+
+    def _side_sids(self, rule: Rule, suffix: str) -> Set[str]:
+        sid = str(rule.params.get("sid_" + suffix) or "").strip()
+        if sid:
+            return {sid} if sid in self.students else set()
+        tag = str(rule.params.get("tag_" + suffix) or "").strip()
+        return set(self.students_with_tag(tag))
+
+    def _side_text(self, rule: Rule, suffix: str) -> str:
+        """「对象 A / 对象 B」端点的中文描述（用于冲突文案）。"""
+        sid = str(rule.params.get("sid_" + suffix) or "").strip()
+        if sid:
+            return "「%s」" % self._name(sid)
+        tag = str(rule.params.get("tag_" + suffix) or "").strip()
+        if tag:
+            return "「%s」标签学生" % tag
+        return "（未指定对象）"
 
     def ranked_sids(self, attr: str) -> List[str]:
         """按属性升序排列、且该属性存在的学生 sid 列表（与座位无关，可缓存）。"""
@@ -239,37 +322,137 @@ class RuleEngine:
             return set(self._all_seats)
         return {(int(s[0]), int(s[1]), int(s[2])) for s in focus}
 
-    def _wide_scope(self, focus: Optional[Iterable[Coord]]) -> Set[Coord]:
-        """变动座位 + 其四邻域。
+    def _group_seats(self, seat: Coord) -> List[Coord]:
+        """座位所在组的全部座位；组下标越界时返回空。"""
+        group_index = int(seat[0])
+        if not (0 <= group_index < self.layout.group_count):
+            return []
+        cached = self._group_seats_cache.get(group_index)
+        if cached is None:
+            cached = self.layout.seats_in_group(group_index)
+            self._group_seats_cache[group_index] = cached
+        return cached
 
-        因为“同桌 / 相邻”类 term 的 ``key`` 里包含自己的邻居座位，只有把邻居
-        也纳入评估范围，“邻居位置变化导致的收益变化”才不会被漏掉；
-        before / after 用同一个范围，差值即为真实增量。
+    def _active_group_indexes(self) -> List[int]:
+        """有可用座位的组下标。只由布局决定，与谁坐在哪里无关。"""
+        if self._active_groups_cache is None:
+            result: List[int] = []
+            for index in range(self.layout.group_count):
+                if any(not self.layout.is_disabled(seat) for seat in self.layout.seats_in_group(index)):
+                    result.append(index)
+            self._active_groups_cache = result
+        return self._active_groups_cache
+
+    def _group_seated_count(self, group_index: int, assignment: Mapping[str, str]) -> int:
+        count = 0
+        for seat in self.layout.seats_in_group(group_index):
+            if assignment.get(self.key_of(seat), ""):
+                count += 1
+        return count
+
+    def _group_gender_counts(self, group_index: int, assignment: Mapping[str, str]) -> Tuple[int, int]:
+        """``(性别已知人数, 其中男生数)``。"""
+        known = 0
+        males = 0
+        for seat in self.layout.seats_in_group(group_index):
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid:
+                continue
+            student = self.students.get(sid)
+            if student is None:
+                continue
+            gender = normalize_gender(student.gender)
+            if not gender:
+                continue
+            known += 1
+            if gender == "男":
+                males += 1
+        return known, males
+
+    def _order_sequence(self, rule: Rule) -> List[str]:
+        """「按顺序排座」的顺序：给了数值属性就按属性升序，否则按学号的自然序。"""
+        attr = str(rule.params.get("attr") or "").strip()
+        cached = self._order_cache.get(attr)
+        if cached is None:
+            if attr:
+                cached = list(self.ranked_sids(attr))
+            else:
+                cached = sorted(self.students, key=natural_key)
+            self._order_cache[attr] = cached
+        return cached
+
+    def _order_position(self, seat: Coord, axis: str) -> int:
+        if axis == "group":
+            return int(seat[0])
+        return self.layout.front_row_index(seat)
+
+    def _max_distance(self) -> int:
+        """教室里两个座位之间最大的曼哈顿距离（只由布局决定）。"""
+        if self._max_distance_cache is None:
+            seats = self._all_seats
+            if not seats:
+                self._max_distance_cache = 1
+            else:
+                span = (max(s[0] for s in seats) + max(s[1] for s in seats)
+                        + max(s[2] for s in seats))
+                self._max_distance_cache = max(1, span)
+        return self._max_distance_cache
+
+    def _scope_sets(self, focus: Optional[Iterable[Coord]]) -> Tuple[Set[Coord], Set[Coord], Set[Coord]]:
+        """返回 ``(radius0, radius1, radius2)`` 三档扫描范围，按规则的影响半径取用。
+
+        半径的含义见 ``RuleSpec.scope``：0 只扫变动座位本身，1 还要加四邻域
+        （"同桌 / 相邻"类 term 的 ``key`` 含邻居座位，只有把邻居纳入范围，
+        "邻居位置变化导致的收益变化"才不会被漏掉），2 还要加整组（每组人数、
+        组内男女比例这类全组计数）。
+
+        **三档都只由坐标导出，绝不读占用者**：before / after 两次评估必须拿到
+        同一组集合，差值才是真实增量。
         """
-        return self._scopes(focus)[1]
-
-    def _scopes(self, focus: Optional[Iterable[Coord]]) -> Tuple[Set[Coord], Set[Coord]]:
-        """返回 ``(narrow, wide)``：只依赖自身的规则用 narrow，依赖邻居的用 wide。"""
         if focus is None:
             all_seats = set(self._all_seats)
-            return all_seats, all_seats
+            return all_seats, all_seats, all_seats
         narrow = self._focus(focus)
         if len(narrow) >= len(self._all_seats):
-            return narrow, narrow
+            return narrow, narrow, narrow
         wide = set(narrow)
+        group = set(narrow)
         for seat in narrow:
             wide.update(self.neighbors_of(seat))
-        return narrow, wide
+            group.update(self._group_seats(seat))
+        return narrow, wide, group
 
     def affected_seats(self, seats: Iterable[Coord]) -> Set[Coord]:
-        """变动座位及其四邻域（UI 增量校验用）。"""
-        return self._wide_scope(seats)
+        """变动座位及其可能波及的座位（UI 增量校验用）。
+
+        取三档范围的并集：宁可多标几处，也不能漏掉旧标记，
+        否则界面上会残留已经不存在的高亮。
+        """
+        narrow, wide, group = self._scope_sets(seats)
+        if self._has_group_scope:
+            return narrow | wide | group
+        return narrow | wide
+
+    def _seat_index(self, assignment: Mapping[str, str]) -> Dict[str, Coord]:
+        """本次评估的 ``sid -> 座位`` 索引（供「对象对」类规则反查）。
+
+        求解器是**原地交换**那个 assignment 字典，所以缓存不能跨调用复用：
+        ``hard_terms`` / ``soft_terms`` 每次进来都会把它置为 None。
+        没有规则用到时不会构建（惰性）。
+        """
+        if self._seat_index_cache is None:
+            index: Dict[str, Coord] = {}
+            for key, sid in assignment.items():
+                if not sid:
+                    continue
+                seat = try_parse_key(key)
+                if seat is not None:
+                    index[sid] = seat
+            self._seat_index_cache = index
+        return self._seat_index_cache
 
     def _seat_of(self, assignment: Mapping[str, str], sid: str) -> Optional[Coord]:
-        for key, value in assignment.items():
-            if value == sid:
-                return try_parse_key(key)
-        return None
+        return self._seat_index(assignment).get(sid)
 
     def _occupant(self, assignment: Mapping[str, str], seat: Coord) -> str:
         return assignment.get(self.key_of(seat), "")
@@ -281,15 +464,16 @@ class RuleEngine:
         focus: Optional[Iterable[Coord]] = None,
         scope: Optional[Set[Coord]] = None,
     ) -> List[HardTerm]:
+        self._seat_index_cache = None
         if scope is not None:
-            narrow = wide = scope
+            narrow = wide = group = scope
         else:
-            narrow, wide = self._scopes(focus)
+            narrow, wide, group = self._scope_sets(focus)
         if not wide:
             return []
         terms: Dict[Tuple[str, Key], HardTerm] = {}
         for rule in self.hard_rules:
-            rule_scope = narrow if rule.kind in OWN_SEAT_KINDS else wide
+            rule_scope = (narrow, wide, group)[self._stage_of(rule)]
             if not rule_scope:
                 continue
             for term in self._hard_rule_terms(rule, assignment, rule_scope):
@@ -302,6 +486,22 @@ class RuleEngine:
             return self._hard_fixed_seat(rule, assignment, scope)
         if kind == RuleKind.FORBID_ADJACENT:
             return self._hard_forbid_adjacent(rule, assignment, scope)
+        if kind == RuleKind.MUST_DESK:
+            return self._hard_must_desk(rule, assignment, scope)
+        if kind == RuleKind.FORBID_DESK:
+            return self._hard_forbid_desk(rule, assignment, scope)
+        if kind == RuleKind.MUST_ADJACENT:
+            return self._hard_must_adjacent(rule, assignment, scope)
+        if kind == RuleKind.FORBID_ADJACENT_PAIR:
+            return self._hard_forbid_adjacent_pair(rule, assignment, scope)
+        if kind == RuleKind.NEIGHBOR_CLEAR:
+            return self._hard_neighbor_clear(rule, assignment, scope)
+        if kind == RuleKind.SAME_AREA:
+            return self._hard_same_area(rule, assignment, scope)
+        if kind == RuleKind.GROUP_SIZE_LIMIT:
+            return self._hard_group_size_limit(rule, assignment, scope)
+        if kind == RuleKind.EXAM_ORDER:
+            return self._hard_exam_order(rule, assignment, scope)
         if kind == RuleKind.REGION_REQUIRED:
             return self._hard_region(rule, assignment, scope, required=True)
         if kind == RuleKind.REGION_FORBIDDEN:
@@ -336,7 +536,6 @@ class RuleEngine:
         a, b = rule.target_sid_a(), rule.target_sid_b()
         if not a or not b:
             return []
-        targets = (a, b)
         terms: List[HardTerm] = []
         seen: Set[Key] = set()
         for seat in scope:
@@ -358,6 +557,267 @@ class RuleEngine:
                         self._name(sid), self._name(other),
                         self._seat_text(seat), self._seat_text(neighbor),
                     ),
+                ))
+        return terms
+
+    def _hard_must_desk(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[HardTerm]:
+        """对象 A 的每个已入座成员，至少有一个对象 B 的同桌。
+
+        「至少一个」而不是「全部同桌都得是 B」：一个 A 同学夹在两个 B 同学中间
+        是完全正常的排法。``seats`` 只放自己——同桌是被换走的那个座位时，
+        把同桌也写进去会让冲突标记落到两跳之外，界面上清不掉。
+        """
+        sids_a, sids_b = self.pair_sets(rule)
+        if not sids_a or not sids_b:
+            return []
+        terms: List[HardTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in sids_a:
+                continue
+            if any(assignment.get(self.key_of(n), "") in sids_b for n in self._desk_mates(seat)):
+                continue
+            terms.append(HardTerm(
+                rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                key=_key_of([seat]), seats=[seat], students=[sid],
+                message="「%s」在 %s 没有和%s同桌" % (
+                    self._name(sid), self._seat_text(seat), self._side_text(rule, "b")),
+            ))
+        return terms
+
+    def _hard_forbid_desk(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[HardTerm]:
+        """对象 A 的学生不得与对象 B 的学生同桌，每个同桌对算一条。"""
+        sids_a, sids_b = self.pair_sets(rule)
+        if not sids_a or not sids_b:
+            return []
+        terms: List[HardTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in sids_a:
+                continue
+            for mate in self._desk_mates(seat):
+                other = assignment.get(self.key_of(mate), "")
+                if not other or other not in sids_b:
+                    continue
+                terms.append(HardTerm(
+                    rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                    key=_key_of([seat, mate]), seats=[seat, mate], students=[sid, other],
+                    message="「%s」与「%s」同桌（%s / %s），违反「禁止同桌」" % (
+                        self._name(sid), self._name(other),
+                        self._seat_text(seat), self._seat_text(mate)),
+                ))
+        return terms
+
+    def _hard_must_adjacent(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[HardTerm]:
+        """对象 A 的每个已入座成员，四邻域里至少有一个对象 B 的成员。"""
+        sids_a, sids_b = self.pair_sets(rule)
+        if not sids_a or not sids_b:
+            return []
+        terms: List[HardTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in sids_a:
+                continue
+            if any(assignment.get(self.key_of(n), "") in sids_b for n in self.neighbors_of(seat)):
+                continue
+            terms.append(HardTerm(
+                rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                key=_key_of([seat]), seats=[seat], students=[sid],
+                message="「%s」在 %s 附近没有%s" % (
+                    self._name(sid), self._seat_text(seat), self._side_text(rule, "b")),
+            ))
+        return terms
+
+    def _hard_forbid_adjacent_pair(
+        self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]
+    ) -> List[HardTerm]:
+        """对象 A 的学生不得与对象 B 的学生相邻（四邻域），每个相邻对算一条。"""
+        sids_a, sids_b = self.pair_sets(rule)
+        if not sids_a or not sids_b:
+            return []
+        terms: List[HardTerm] = []
+        seen: Set[Key] = set()
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in sids_a:
+                continue
+            for neighbor in self.neighbors_of(seat):
+                other = assignment.get(self.key_of(neighbor), "")
+                if not other or other not in sids_b:
+                    continue
+                key = _key_of([seat, neighbor])
+                if key in seen:
+                    continue
+                seen.add(key)
+                terms.append(HardTerm(
+                    rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                    key=key, seats=[seat, neighbor], students=[sid, other],
+                    message="「%s」与「%s」相邻（%s / %s），违反「禁止相邻」" % (
+                        self._name(sid), self._name(other),
+                        self._seat_text(seat), self._seat_text(neighbor)),
+                ))
+        return terms
+
+    def _hard_neighbor_clear(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[HardTerm]:
+        """目标学生的四邻域里不得有其他学生（可选地放过某个标签的学生）。"""
+        sids = self.target_set(rule)
+        if not sids:
+            return []
+        allow_tag = str(rule.params.get("allow") or "").strip()
+        allowed = set(self.students_with_tag(allow_tag)) if allow_tag else set()
+        terms: List[HardTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in sids:
+                continue
+            intruders = []
+            for neighbor in self.neighbors_of(seat):
+                other = assignment.get(self.key_of(neighbor), "")
+                if other and other != sid and other not in allowed:
+                    intruders.append(other)
+            if not intruders:
+                continue
+            names = "、".join("「%s」" % self._name(s) for s in intruders)
+            terms.append(HardTerm(
+                rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                key=_key_of([seat]), seats=[seat], students=[sid] + intruders,
+                message="「%s」四周还有 %s" % (self._name(sid), names),
+            ))
+        return terms
+
+    def _hard_same_area(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[HardTerm]:
+        """对象 A 与对象 B 的学生必须在同一个组（或同一排），两端都已入座才判定。
+
+        **两个端点都当锚点**（其它规则只需锚在"对象 A 的座位"上）：同组 / 同排不是
+        局部关系，两端可能隔着好几个组。只从 A 侧生成的话，"B 侧的学生被换走了"
+        这件事在增量评估里根本看不见——focus 里没有 A 的座位，那条 term 就不会
+        被重算，差值也就与全量对不上了。key 是对称的，两端各生成一次会被去重。
+
+        ``seats`` 只放锚点：另一端可能在好几个组之外，写进去会让冲突标记落在
+        ``affected_seats`` 之外，界面上就清不掉了。
+        """
+        sids_a, sids_b = self.pair_sets(rule)
+        if not sids_a or not sids_b:
+            return []
+        mode = str(rule.params.get("mode") or "group")
+        where = "同一个组" if mode == "group" else "同一排"
+        index = self._seat_index(assignment)
+        terms: List[HardTerm] = []
+        seen: Set[Key] = set()
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid:
+                continue
+            in_a = sid in sids_a
+            in_b = sid in sids_b
+            if not in_a and not in_b:
+                continue
+            others: Set[str] = set()
+            if in_a:
+                others |= sids_b
+            if in_b:
+                others |= sids_a
+            others.discard(sid)
+            for other in sorted(others):
+                mate = index.get(other)
+                if mate is None:
+                    continue
+                same = (mate[0] == seat[0]) if mode == "group" else (mate[1] == seat[1])
+                if same:
+                    continue
+                key = _key_of([seat, mate])
+                if key in seen:
+                    continue
+                seen.add(key)
+                terms.append(HardTerm(
+                    rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                    key=key, seats=[seat], students=[sid, other],
+                    message="「%s」（%s）与「%s」（%s）不在%s" % (
+                        self._name(sid), self._seat_text(seat),
+                        self._name(other), self._seat_text(mate), where),
+                ))
+        return terms
+
+    def _hard_group_size_limit(
+        self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]
+    ) -> List[HardTerm]:
+        """每个组的已入座人数不得超过上限，一组最多一条。
+
+        ``seats`` 只放超限的那几个座位（按坐标排序取最后几个，是占用集合的函数）：
+        整组写进去的话，状态栏按座位计数会把"1 条违反"显示成十几处冲突。
+        """
+        limit = self._int_param(rule, "limit", 8, 1)
+        terms: List[HardTerm] = []
+        seen: Set[int] = set()
+        for seat in scope:
+            group_index = int(seat[0])
+            if group_index in seen or not (0 <= group_index < self.layout.group_count):
+                continue
+            seen.add(group_index)
+            seats = self._group_seats(seat)
+            occupied = [s for s in seats if assignment.get(self.key_of(s), "")]
+            if len(occupied) <= limit:
+                continue
+            occupied.sort()
+            extra = occupied[limit:]
+            terms.append(HardTerm(
+                rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                key=_key_of(seats), seats=extra,
+                students=[assignment.get(self.key_of(s), "") for s in extra],
+                message="%s 坐了 %d 人，超过上限 %d 人" % (
+                    self.layout.group_name(group_index), len(occupied), limit),
+            ))
+        return terms
+
+    def _hard_exam_order(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[HardTerm]:
+        """按顺序就座：排序序列里相邻名次的两个人，位置必须是非降的。
+
+        写成「相邻名次对」的局部约束，而不是「某人的理想排 = 名次 × 排数 ÷ 人数」：
+        学生数通常远多于排数，后者必然不可满足，会变成一笔永远还不清的罚分。
+        两端都已入座才判定；``seats`` 只放锚点。
+        """
+        sequence = self._order_sequence(rule)
+        if len(sequence) < 2:
+            return []
+        rank_of = {sid: i for i, sid in enumerate(sequence)}
+        axis = str(rule.params.get("axis") or "row")
+        index = self._seat_index(assignment)
+        terms: List[HardTerm] = []
+        seen: Set[Key] = set()
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            rank = rank_of.get(sid)
+            if rank is None:
+                continue
+            for other_rank in (rank - 1, rank + 1):
+                if not (0 <= other_rank < len(sequence)):
+                    continue
+                other = sequence[other_rank]
+                if other == sid:
+                    continue
+                mate = index.get(other)
+                if mate is None:
+                    continue
+                mine = self._order_position(seat, axis)
+                theirs = self._order_position(mate, axis)
+                if rank < other_rank:
+                    if mine <= theirs:
+                        continue
+                    first, second = sid, other
+                else:
+                    if mine >= theirs:
+                        continue
+                    first, second = other, sid
+                key = _key_of([seat, mate])
+                if key in seen:
+                    continue
+                seen.add(key)
+                terms.append(HardTerm(
+                    rule_id=rule.id, kind=rule.kind, rule_label=self.label_of(rule),
+                    key=key, seats=[seat], students=[sid, other],
+                    message="「%s」应排在「%s」前面（%s / %s）" % (
+                        self._name(first), self._name(second),
+                        self._seat_text(index.get(first)), self._seat_text(index.get(second))),
                 ))
         return terms
 
@@ -419,15 +879,16 @@ class RuleEngine:
         focus: Optional[Iterable[Coord]] = None,
         scope: Optional[Set[Coord]] = None,
     ) -> List[SoftTerm]:
+        self._seat_index_cache = None
         if scope is not None:
-            narrow = wide = scope
+            narrow = wide = group = scope
         else:
-            narrow, wide = self._scopes(focus)
+            narrow, wide, group = self._scope_sets(focus)
         if not wide:
             return []
         terms: List[SoftTerm] = []
         for rule in self.soft_rules:
-            rule_scope = narrow if rule.kind in OWN_SEAT_KINDS else wide
+            rule_scope = (narrow, wide, group)[self._stage_of(rule)]
             if not rule_scope:
                 continue
             terms.extend(self._soft_rule_terms(rule, assignment, rule_scope))
@@ -449,6 +910,20 @@ class RuleEngine:
             return self._soft_gender_alternate(rule, assignment, scope)
         if kind == RuleKind.FRONT_PREFER:
             return self._soft_front_prefer(rule, assignment, scope)
+        if kind == RuleKind.TAG_CLUSTER:
+            return self._soft_tag_cluster(rule, assignment, scope)
+        if kind == RuleKind.BACK_PREFER:
+            return self._soft_back_prefer(rule, assignment, scope)
+        if kind == RuleKind.AISLE_PREFER:
+            return self._soft_aisle_prefer(rule, assignment, scope)
+        if kind == RuleKind.AVOID_PREV_NEIGHBOR:
+            return self._soft_avoid_prev_neighbor(rule, assignment, scope)
+        if kind == RuleKind.NEAR_PREFER:
+            return self._soft_near_prefer(rule, assignment, scope)
+        if kind == RuleKind.GROUP_BALANCE:
+            return self._soft_group_balance(rule, assignment, scope)
+        if kind == RuleKind.GENDER_BALANCE:
+            return self._soft_gender_balance(rule, assignment, scope)
         return []
 
     def _term(self, rule: Rule, key: Key, value: float) -> SoftTerm:
@@ -573,12 +1048,9 @@ class RuleEngine:
             student = self.students.get(sid)
             if student is None or tag_a not in student.tags:
                 continue
-            group = self.layout.groups[seat[0]] if 0 <= seat[0] < self.layout.group_count else None
-            if group is None:
+            if not (0 <= seat[0] < self.layout.group_count):
                 continue
-            partner_seats: List[Coord] = [
-                (seat[0], seat[1], col) for col in (seat[2] - 1, seat[2] + 1) if 0 <= col < group.cols
-            ]
+            partner_seats: List[Coord] = self._desk_mates(seat)
             occupied = [n for n in partner_seats if assignment.get(self.key_of(n), "")]
             hits = 0
             for n in occupied:
@@ -618,12 +1090,9 @@ class RuleEngine:
             gender = normalize_gender(student.gender)
             if not gender:
                 continue
-            group = self.layout.groups[seat[0]] if 0 <= seat[0] < self.layout.group_count else None
-            if group is None:
+            if not (0 <= seat[0] < self.layout.group_count):
                 continue
-            partner_seats: List[Coord] = [
-                (seat[0], seat[1], col) for col in (seat[2] - 1, seat[2] + 1) if 0 <= col < group.cols
-            ]
+            partner_seats: List[Coord] = self._desk_mates(seat)
             known = 0
             opposite = 0
             for n in partner_seats:
@@ -653,6 +1122,223 @@ class RuleEngine:
             index = self.layout.front_row_index(seat)
             value = 1.0 if rows <= 1 else max(0.0, 1.0 - index / float(rows - 1))
             terms.append(self._term(rule, _key_of([seat]), value))
+        return terms
+
+    def _soft_tag_cluster(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[SoftTerm]:
+        """每个带该标签的学生一个 term：同标签邻居越多越好（``_soft_tag_disperse`` 的对偶）。
+
+        身边一个已入座的人都没有时给 0.0：聚集的语义下"孤零零一个人"并没有达成聚集，
+        不能照抄分散规则的 1.0（那是"没有邻居就没有违反"）。
+        """
+        tag = rule.target_tag()
+        if not tag:
+            return []
+        terms: List[SoftTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid:
+                continue
+            student = self.students.get(sid)
+            if student is None or tag not in student.tags:
+                continue
+            neighbor_seats = self.neighbors_of(seat)
+            occupied = [n for n in neighbor_seats if assignment.get(self.key_of(n), "")]
+            if not occupied:
+                value = 0.0
+            else:
+                same = 0
+                for n in occupied:
+                    other = self.students.get(assignment.get(self.key_of(n), ""))
+                    if other is not None and tag in other.tags:
+                        same += 1
+                value = same / float(len(occupied))
+            terms.append(self._term(rule, _key_of([seat] + neighbor_seats), value))
+        return terms
+
+    def _soft_back_prefer(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[SoftTerm]:
+        """目标学生越靠后越好（``_soft_front_prefer`` 的镜像）。"""
+        sids = self.target_set(rule)
+        if not sids:
+            return []
+        rows = max(1, self.layout.max_rows)
+        terms: List[SoftTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in sids:
+                continue
+            index = self.layout.front_row_index(seat)
+            value = 1.0 if rows <= 1 else max(0.0, index / float(rows - 1))
+            terms.append(self._term(rule, _key_of([seat]), value))
+        return terms
+
+    def _soft_aisle_prefer(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[SoftTerm]:
+        """目标学生优先靠近过道，或尽量居中。"""
+        sids = self.target_set(rule)
+        if not sids:
+            return []
+        mode = str(rule.params.get("mode") or "both")
+        terms: List[SoftTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in sids:
+                continue
+            terms.append(self._term(rule, _key_of([seat]), self._aisle_value(seat, mode)))
+        return terms
+
+    def _aisle_value(self, seat: Coord, mode: str) -> float:
+        """座位对"靠过道 / 居中"的满足度。
+
+        "过道"是组与组 **之间** 的通道（渲染与导出都按 ``group.gap_after`` 留出来），
+        所以最左组没有左侧过道、最右组没有右侧过道。目标位置不存在时给 1.0：
+        为一件事先就无解的事扣分，只会平白拉低满意度。
+        """
+        group_index = int(seat[0])
+        if not (0 <= group_index < self.layout.group_count):
+            return 1.0
+        cols = self.layout.groups[group_index].cols
+        col = int(seat[2])
+        last = cols - 1
+        if last <= 0:
+            return 1.0
+        if mode == "center":
+            middle = last / 2.0
+            return max(0.0, 1.0 - abs(col - middle) / middle)
+        has_left = group_index > 0
+        has_right = group_index < self.layout.group_count - 1
+        if mode == "left":
+            aisles = [0] if has_left else []
+        elif mode == "right":
+            aisles = [last] if has_right else []
+        else:
+            aisles = ([0] if has_left else []) + ([last] if has_right else [])
+        if not aisles:
+            return 1.0
+        distance = min(abs(col - c) for c in aisles)
+        return max(0.0, 1.0 - distance / float(last))
+
+    def _soft_avoid_prev_neighbor(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[SoftTerm]:
+        """每个有上次同桌记录的学生一个 term：与上次同桌的同学重逢得越少越好。
+
+        没有已占用同桌时给 1.0（没有同桌就无从"避免"），但**仍然发 term** ——
+        term 条数必须只由"谁已入座"决定，否则 ``max_raw`` 会随排列变化。
+        """
+        if not self._prev_desk_mates:
+            return []
+        terms: List[SoftTerm] = []
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid or sid not in self._prev_desk_mates:
+                continue
+            mates = self._prev_desk_mates[sid]
+            desk_seats = self._desk_mates(seat)
+            occupied = [n for n in desk_seats if assignment.get(self.key_of(n), "")]
+            if not occupied:
+                value = 1.0
+            else:
+                hits = 0
+                for n in occupied:
+                    if assignment.get(self.key_of(n), "") in mates:
+                        hits += 1
+                value = 1.0 - hits / float(len(occupied))
+            terms.append(self._term(rule, _key_of([seat] + desk_seats), value))
+        return terms
+
+    def _soft_near_prefer(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[SoftTerm]:
+        """对象 A 与对象 B 的学生两两成对，离得越近越好。
+
+        刻意写成「每一对一条 term」而不是「每人到最近者的距离」：后者依赖的距离
+        没有上界——B 组的人可以从五个组之外搬过来，任何有限的扫描范围都盖不住，
+        增量评估就会与全量悄悄分叉。
+
+        **两端锚定**：同组 / 靠近都不是局部关系，只从 A 侧生成的话，"B 侧的人被
+        换走了"在增量里根本看不见。远的对给 0 分而不是不发 term——term 条数必须
+        只由"谁已入座"决定，否则 ``max_raw`` 会随排列变化。
+        """
+        sids_a, sids_b = self.pair_sets(rule)
+        if not sids_a or not sids_b:
+            return []
+        span = float(self._max_distance())
+        index = self._seat_index(assignment)
+        terms: List[SoftTerm] = []
+        seen: Set[Key] = set()
+        for seat in scope:
+            sid = assignment.get(self.key_of(seat), "")
+            if not sid:
+                continue
+            in_a = sid in sids_a
+            in_b = sid in sids_b
+            if not in_a and not in_b:
+                continue
+            others: Set[str] = set()
+            if in_a:
+                others |= sids_b
+            if in_b:
+                others |= sids_a
+            others.discard(sid)
+            for other in sorted(others):
+                mate = index.get(other)
+                if mate is None:
+                    continue
+                key = _key_of([seat, mate])
+                if key in seen:
+                    continue
+                seen.add(key)
+                distance = abs(seat[0] - mate[0]) + abs(seat[1] - mate[1]) + abs(seat[2] - mate[2])
+                terms.append(self._term(rule, key, 1.0 - distance / span))
+        return terms
+
+    def _soft_group_balance(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[SoftTerm]:
+        """每组一个 term：该组人数越接近平均人数越好。
+
+        每组**无条件**发一条，条数只由布局决定，``max_raw`` 于是与排列彻底无关。
+        注意 ``soft_terms`` 不像 ``hard_terms`` 那样按 key 去重，整组 key 的规则
+        必须自己按组去重：否则一组十几个座位会发出十几条同 key 的 term，
+        把"每组一个"静默变成"每座位一个"，权重也就跟着按组大小加权了。
+        """
+        groups = self._active_group_indexes()
+        if not groups:
+            return []
+        counts = {index: self._group_seated_count(index, assignment) for index in groups}
+        ideal = sum(counts.values()) / float(len(groups))
+        span = max(1.0, ideal)
+        terms: List[SoftTerm] = []
+        seen: Set[int] = set()
+        for seat in scope:
+            group_index = int(seat[0])
+            if group_index in seen or group_index not in counts:
+                continue
+            seen.add(group_index)
+            value = max(0.0, 1.0 - abs(counts[group_index] - ideal) / span)
+            terms.append(self._term(
+                rule, _key_of(self.layout.seats_in_group(group_index)), value))
+        return terms
+
+    def _soft_gender_balance(self, rule: Rule, assignment: Mapping[str, str], scope: Set[Coord]) -> List[SoftTerm]:
+        """每组一个 term：组内男生数与「组内人数 × 全班男生比例」的偏差越小越好。
+
+        目标比例是引擎初始化时按全体学生算好的常量（``self._male_ratio``），
+        不依赖当前排位——否则它会随交换而变，没被扫到的组却不会重算，
+        增量差就不再等于全量差。
+        """
+        groups = self._active_group_indexes()
+        if not groups:
+            return []
+        counts = {index: self._group_gender_counts(index, assignment) for index in groups}
+        terms: List[SoftTerm] = []
+        seen: Set[int] = set()
+        for seat in scope:
+            group_index = int(seat[0])
+            if group_index in seen or group_index not in counts:
+                continue
+            seen.add(group_index)
+            known, males = counts[group_index]
+            if known <= 0:
+                value = 1.0
+            else:
+                expected = known * self._male_ratio
+                value = max(0.0, 1.0 - abs(males - expected) / (known / 2.0))
+            terms.append(self._term(
+                rule, _key_of(self.layout.seats_in_group(group_index)), value))
         return terms
 
     # 评估
@@ -811,6 +1497,61 @@ class RuleEngine:
                     problems.append(
                         "规则「%s」要求前 %d 排，但教室只有 %d 排" % (rule.label, rows, self.layout.max_rows)
                     )
+
+        # 「对象对」类规则：某一端匹配不到学生时规则会静默失效，直接报出来
+        for rule in self.rules:
+            if rule.kind not in PAIR_KINDS:
+                continue
+            sids_a, sids_b = self.pair_sets(rule)
+            if not sids_a:
+                problems.append("规则「%s」的对象 A（%s）没有匹配到任何学生"
+                                % (rule.label, self._side_text(rule, "a")))
+            if not sids_b:
+                problems.append("规则「%s」的对象 B（%s）没有匹配到任何学生"
+                                % (rule.label, self._side_text(rule, "b")))
+
+        must_pairs = []
+        forbid_pairs = []
+        for rule in self.hard_rules:
+            if rule.kind == RuleKind.MUST_DESK:
+                must_pairs.append(self.pair_sets(rule))
+            elif rule.kind == RuleKind.FORBID_DESK:
+                forbid_pairs.append(self.pair_sets(rule))
+        for sids_a, sids_b in must_pairs:
+            if not sids_a or not sids_b:
+                continue
+            if any(sids_a == other_a and sids_b == other_b for other_a, other_b in forbid_pairs):
+                problems.append("同一组对象既被要求「必须同桌」又被要求「禁止同桌」，无法同时满足")
+
+        # 「同类两两同桌」在每组只有 2 列时会退化成行内完美匹配，奇数人数必然配对失败
+        paired_desks = all(group.cols == 2 for group in self.layout.groups) if self.layout.groups else False
+        for rule in self.hard_rules:
+            if rule.kind != RuleKind.MUST_DESK or not paired_desks:
+                continue
+            tag_a = str(rule.params.get("tag_a") or "").strip()
+            tag_b = str(rule.params.get("tag_b") or "").strip()
+            if not tag_a or tag_a != tag_b:
+                continue
+            sids_a = self.pair_sets(rule)[0]
+            if len(sids_a) % 2 == 1:
+                problems.append(
+                    "规则「%s」要求「%s」标签学生两两同桌，但人数是 %d（奇数）、每组又只有 2 列，"
+                    "必然有一位同学配不上对" % (rule.label, tag_a, len(sids_a))
+                )
+
+        # 「每组人数上限」把总容量卡到装不下全班
+        for rule in self.hard_rules:
+            if rule.kind != RuleKind.GROUP_SIZE_LIMIT:
+                continue
+            limit = self._int_param(rule, "limit", 8, 1)
+            capacity = 0
+            for index in self._active_group_indexes():
+                free = sum(1 for seat in self.layout.seats_in_group(index)
+                           if not self.layout.is_disabled(seat))
+                capacity += min(limit, free)
+            if capacity < len(self.students):
+                problems.append("规则「%s」把总容量限制到 %d 人，但班里有 %d 名学生"
+                                % (rule.label, capacity, len(self.students)))
 
         # 需要强制入座的学生数是否超过可用座位
         must_seat = set(fixed)
