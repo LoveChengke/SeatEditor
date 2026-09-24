@@ -341,7 +341,11 @@ class MainWindow(QMainWindow):
         self.lbl_summary = QLabel("", self)
         self.lbl_conflict = QLabel("", self)
         self.lbl_conflict.setObjectName("StatusWarn")
+        # 自动保存失败要一直挂着，不能用会消失的 toast（见 _autosave）
+        self.lbl_autosave = QLabel("", self)
+        self.lbl_autosave.setObjectName("StatusWarn")
         bar.addWidget(self.lbl_summary)
+        bar.addPermanentWidget(self.lbl_autosave)
         bar.addPermanentWidget(self.lbl_conflict)
 
     def toast(self, message: str, timeout: int = 4000) -> None:
@@ -1407,7 +1411,13 @@ class MainWindow(QMainWindow):
         # 不只是学生和座位（否则只调好布局就崩溃会白调）。
         if not self.project.dirty:
             return
-        JsonProjectStore.autosave(self.project)
+        if JsonProjectStore.autosave(self.project) is None:
+            self.lbl_autosave.setText("自动保存失败，请手动保存（Ctrl+S）")
+            self.lbl_autosave.setToolTip(JsonProjectStore.last_error)
+            self.toast("自动保存失败，请手动保存（Ctrl+S）", 8000)
+        else:
+            self.lbl_autosave.clear()
+            self.lbl_autosave.setToolTip("")
 
     def _maybe_recover(self) -> None:
         info = JsonProjectStore.autosave_info()

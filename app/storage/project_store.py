@@ -135,16 +135,25 @@ class JsonProjectStore:
             pass
 
     # 自动保存
+    last_error: str = ""
+
     @staticmethod
     def autosave(project: Project) -> Optional[Path]:
-        """崩溃恢复用的临时保存；失败时静默返回 None。"""
+        """崩溃恢复用的临时保存；失败返回 None，原因记在 ``last_error``。
+
+        这里不弹窗也不抛异常——自动保存每 2 分钟一次，打断用户不合适。
+        但失败必须让界面看得见（见 ``MainWindow._autosave``），
+        否则 README 承诺的「崩溃后不会丢」就是一句空话。
+        """
         try:
             config.AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
             payload = dumps(project)
             JsonProjectStore._atomic_write(config.AUTOSAVE_FILE, payload)
-            return config.AUTOSAVE_FILE
-        except Exception:  # 自动保存不应打断用户操作
+        except Exception as exc:  # 自动保存不应打断用户操作
+            JsonProjectStore.last_error = "%s: %s" % (type(exc).__name__, exc)
             return None
+        JsonProjectStore.last_error = ""
+        return config.AUTOSAVE_FILE
 
     @staticmethod
     def has_autosave() -> bool:
