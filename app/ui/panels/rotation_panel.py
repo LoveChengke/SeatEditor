@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from typing import List, Optional, Set
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..common import button, confirm, hline, warn
+from .base import ProjectPanel
 from ...models.project import EV_ANY, EV_ASSIGNMENT, EV_HISTORY, EV_SELECTIONS, Project
 from ...services.rotation_service import RotationError, RotationOptions, RotationService
 from ..style.theme import PANEL_RULE_WIDTH, Color
@@ -37,7 +38,7 @@ MODE_ITEMS = (
 )
 
 
-class RotationPanel(QWidget):
+class RotationPanel(ProjectPanel):
     """自动轮换面板。"""
 
     preview_ready = pyqtSignal(object)        # RotationPlan
@@ -45,13 +46,11 @@ class RotationPanel(QWidget):
     rollback_requested = pyqtSignal(int)      # week
 
     def __init__(self, project: Project, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._project = project
+        super().__init__(project, parent)
         self._service = RotationService(project)
         self._plan = None
         self._checked_ids: Set[str] = set()
         self._populating = False
-        self._refresh_pending = False
 
         self.setObjectName("Panel")
         self.setMinimumWidth(max(220, PANEL_RULE_WIDTH - 60))
@@ -360,16 +359,7 @@ class RotationPanel(QWidget):
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_SELECTIONS, EV_HISTORY, EV_ASSIGNMENT, EV_ANY):
             return
-        if self._refresh_pending:
-            return
-        self._refresh_pending = True
-        QTimer.singleShot(0, self._deferred_refresh)
-
-    def _deferred_refresh(self) -> None:
-        self._refresh_pending = False
-        if self._project is None:
-            return
-        self.refresh()
+        self._schedule_refresh()
 
     # ------------------------------------------------------------ 工具
     def _set_info(self, text: str, error: bool = False) -> None:

@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..common import button, confirm, hline, warn
+from .base import ProjectPanel
 from ...models.project import EV_ANY, EV_ASSIGNMENT, EV_STUDENTS, EV_TAGS, Project
 from ...services.student_service import (
     ASSIGN_ALL, ASSIGN_ASSIGNED, ASSIGN_UNASSIGNED, TAG_MODE_ALL, TAG_MODE_ANY,
@@ -32,7 +33,7 @@ from ..widgets.student_table import StudentTableModel, StudentTableView
 SEARCH_DEBOUNCE_MS = 150
 
 
-class StudentPanel(QWidget):
+class StudentPanel(ProjectPanel):
     """学生名单面板。"""
 
     selection_changed = pyqtSignal(list)      # 选中的 sid 列表
@@ -48,15 +49,13 @@ class StudentPanel(QWidget):
     clear_seats_requested = pyqtSignal(list)  # sids
 
     def __init__(self, project: Project, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._project = project
+        super().__init__(project, parent)
         self._service = StudentService(project)
         self._model = StudentTableModel(project, self._service, self)
         self._selected_sids: List[str] = []
         self._checked_tags: Set[str] = set()
         self._updating = False
         self._tag_populating = False
-        self._refresh_pending = False
 
         self.setObjectName("SidePanel")
         self.setMinimumWidth(max(240, PANEL_STUDENT_WIDTH - 60))
@@ -422,17 +421,7 @@ class StudentPanel(QWidget):
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_STUDENTS, EV_TAGS, EV_ASSIGNMENT, EV_ANY):
             return
-        if self._refresh_pending:
-            return
-        self._refresh_pending = True
-        QTimer.singleShot(0, self._deferred_refresh)
-
-    def _deferred_refresh(self) -> None:
-        self._refresh_pending = False
-        if self._project is None:
-            return
-        self._rebuild_tag_menu()
-        self._apply_filter()
+        self._schedule_refresh()
 
     # ------------------------------------------------------------ 工具
     def _confirm(self, text: str, title: str) -> bool:

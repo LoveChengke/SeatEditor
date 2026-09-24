@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional, Set
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView, QGridLayout, QHBoxLayout, QInputDialog,
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..common import button, confirm, hline, warn
+from .base import ProjectPanel
 from ...models.project import EV_ANY, EV_SELECTIONS, Project
 from ...utils.seat_key import Seat as Coord
 from ..style.theme import PANEL_RULE_WIDTH, Color
@@ -32,7 +33,7 @@ def _color_icon(color: str) -> QIcon:
     return QIcon(pixmap)
 
 
-class SelectionPanel(QWidget):
+class SelectionPanel(ProjectPanel):
     """座位选区面板。"""
 
     apply_requested = pyqtSignal(str)         # selection id：高亮该选区
@@ -44,10 +45,8 @@ class SelectionPanel(QWidget):
     selection_renamed = pyqtSignal(str, str)  # id, new name
 
     def __init__(self, project: Project, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._project = project
+        super().__init__(project, parent)
         self._current_seats: Set[Coord] = set()
-        self._refresh_pending = False
 
         self.setObjectName("Panel")
         self.setMinimumWidth(max(220, PANEL_RULE_WIDTH - 60))
@@ -308,16 +307,7 @@ class SelectionPanel(QWidget):
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_SELECTIONS, EV_ANY):
             return
-        if self._refresh_pending:
-            return
-        self._refresh_pending = True
-        QTimer.singleShot(0, self._deferred_refresh)
-
-    def _deferred_refresh(self) -> None:
-        self._refresh_pending = False
-        if self._project is None:
-            return
-        self.refresh()
+        self._schedule_refresh()
 
     # ------------------------------------------------------------ 工具
     def _confirm(self, text: str, title: str) -> bool:

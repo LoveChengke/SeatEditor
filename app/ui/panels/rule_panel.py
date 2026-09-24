@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView, QDialog, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QMenu, QToolButton,
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..common import button, confirm, hline, warn
+from .base import ProjectPanel
 from ...models.project import EV_ANY, EV_RULES, EV_SELECTIONS, EV_STUDENTS, EV_TAGS, Project
 from ...models.rule import (
     HARD, HARD_KINDS, RULE_SPECS, SOFT, SOFT_KINDS, Rule, describe_rule, make_rule,
@@ -27,16 +28,14 @@ from ...models.rule import (
 from ..style.theme import PANEL_RULE_WIDTH
 
 
-class RulePanel(QWidget):
+class RulePanel(ProjectPanel):
     """硬约束 / 软约束列表面板。"""
 
     rules_changed = pyqtSignal()
 
     def __init__(self, project: Project, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._project = project
+        super().__init__(project, parent)
         self._updating = False
-        self._refresh_pending = False
         self._lists: Dict[str, QListWidget] = {}
 
         self.setObjectName("Panel")
@@ -302,16 +301,7 @@ class RulePanel(QWidget):
     def _on_project_event(self, event: str, _payload) -> None:
         if event not in (EV_RULES, EV_TAGS, EV_SELECTIONS, EV_STUDENTS, EV_ANY):
             return
-        if self._refresh_pending:
-            return
-        self._refresh_pending = True
-        QTimer.singleShot(0, self._deferred_refresh)
-
-    def _deferred_refresh(self) -> None:
-        self._refresh_pending = False
-        if self._project is None:
-            return
-        self.refresh()
+        self._schedule_refresh()
 
     # ------------------------------------------------------------ 工具
     def _confirm(self, text: str, title: str) -> bool:
