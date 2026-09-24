@@ -93,29 +93,46 @@ class JsonProjectStore:
 
     @staticmethod
     def _atomic_write(target: Path, payload: str) -> None:
-        handle = None
-        tmp_path = ""
+        """先写同目录的临时文件再 ``os.replace``，避免写到一半留下半个项目文件。"""
         try:
             fd, tmp_path = tempfile.mkstemp(
                 prefix=target.name + ".", suffix=".tmp", dir=str(target.parent)
             )
-            handle = os.fdopen(fd, "w", encoding="utf-8", newline="\n")
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
         except OSError as exc:
             raise ProjectStoreError("写入文件失败：%s" % exc) from exc
-        finally:
-            if handle is not None:
-                handle.close()
+
+        try:
+            # mkstemp 交出的 fd 要自己负责关闭：fdopen 成功后由 with 关掉，
+            # fdopen 自己失败时在这里关——不能只写 `with os.fdopen(fd, ...)`，
+            # 因为 with 是先求值再进入，fdopen 抛异常时 with 根本不会执行。
+            try:
+                handle = os.fdopen(fd, "w", encoding="utf-8", newline="\n")
+            except Exception:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+            with handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as exc:
+            JsonProjectStore._remove_quietly(tmp_path)
+            raise ProjectStoreError("写入文件失败：%s" % exc) from exc
+
         try:
             os.replace(tmp_path, target)
         except OSError as exc:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+            JsonProjectStore._remove_quietly(tmp_path)
             raise ProjectStoreError("保存文件失败：%s" % exc) from exc
+
+    @staticmethod
+    def _remove_quietly(path: str) -> None:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
     # 自动保存
     @staticmethod
