@@ -170,7 +170,8 @@ class RuleEditDialog(QDialog):
         if field.kind == F_ATTR:
             return leading + [(name, name) for name in self.project.attr_names()]
         if field.kind == F_CHOICE:
-            return list(field.choices)
+            # field.choices 是 (值, 显示文本)，这里要的是 (显示文本, 值)
+            return [(label, value) for value, label in field.choices]
         if field.kind == F_SEAT:
             pairs = []
             for gi, group in enumerate(self.project.layout.groups):

@@ -233,6 +233,21 @@ def make_rule_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+def _choice_value(field: ParamField, value: Any) -> Any:
+    """把 F_CHOICE 的参数值归一成代码。
+
+    旧版本的下拉框把 ``(值, 显示文本)`` 当 ``(显示文本, 值)`` 用，于是参数里
+    存进了中文标签（如「从大到小」），而引擎读的是代码（``"desc"``），
+    方向 / 轴 / 模式因此静默失效。这里把已知标签还原成代码，
+    让修好之前存下的项目也能正常工作。
+    """
+    text = "" if value is None else str(value)
+    for code, label in field.choices:
+        if text == label:
+            return code
+    return value
+
+
 @dataclass
 class Rule:
     """一条规则实例。"""
@@ -265,6 +280,8 @@ class Rule:
                         self.params[fld.key] = int(self.params[fld.key])
                     except (TypeError, ValueError):
                         self.params[fld.key] = fld.default
+                elif fld.kind == F_CHOICE:
+                    self.params[fld.key] = _choice_value(fld, self.params[fld.key])
         try:
             self.weight = float(self.weight)
         except (TypeError, ValueError):
