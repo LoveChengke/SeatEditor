@@ -16,10 +16,6 @@ except Exception:  # noqa: BLE001 - 任何导入失败都回退
     _LAZY = None
 
 
-def has_pypinyin() -> bool:
-    return _LAZY is not None
-
-
 def _char_keys(text: str) -> List[Tuple[int, int, int]]:
     keys: List[Tuple[int, int, int]] = []
     for ch in text:

@@ -1,7 +1,6 @@
-"""教室布局模型：SeatGroup / Layout / Seat。
+"""教室布局模型：SeatGroup / Layout。
 
-坐标三元组统一用 ``Coord`` 表示（``(group_idx, row, col)``），
-避免与 ``Seat`` 数据类混淆。
+坐标三元组统一用 ``Coord`` 表示，即 ``(group_idx, row, col)``。
 """
 
 from __future__ import annotations
@@ -74,27 +73,6 @@ class SeatGroup:
 
 
 @dataclass
-class Seat:
-    """一个具体座位。"""
-
-    group: int
-    row: int
-    col: int
-    disabled: bool = False
-
-    @property
-    def key(self) -> str:
-        return make_key(self.coord)
-
-    @property
-    def coord(self) -> Coord:
-        return (self.group, self.row, self.col)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"seat": self.key, "disabled": bool(self.disabled)}
-
-
-@dataclass
 class Layout:
     """整间教室的座位布局。"""
 
@@ -127,9 +105,6 @@ class Layout:
     @property
     def group_count(self) -> int:
         return len(self.groups)
-
-    def group(self, index: int) -> SeatGroup:
-        return self.groups[index]
 
     def group_name(self, index: int) -> str:
         if 0 <= index < len(self.groups):
@@ -173,17 +148,6 @@ class Layout:
         else:
             self.disabled_seats.discard(coord)
 
-    def toggle_disabled(self, seat: Sequence[int]) -> bool:
-        """切换空置状态，返回切换后的状态。"""
-        coord = _as_coord(seat)
-        if coord is None:
-            return False
-        if coord in self.disabled_seats:
-            self.disabled_seats.discard(coord)
-            return False
-        self.disabled_seats.add(coord)
-        return True
-
     def prune_disabled(self) -> None:
         """删除越界或被缩短的分组留下的空置标记。"""
         self.disabled_seats = {s for s in self.disabled_seats if self.contains(s)}
@@ -203,20 +167,6 @@ class Layout:
     def max_rows(self) -> int:
         return max([g.rows for g in self.groups], default=0)
 
-    def row_count(self) -> int:
-        return self.max_rows
-
-    def is_front_row(self, seat: Sequence[int], n: int = 1) -> bool:
-        """座位是否位于讲台侧前 n 排内。"""
-        coord = _as_coord(seat)
-        if coord is None:
-            return False
-        _, row, _ = coord
-        total = self.max_rows
-        if self.podium_side == "top":
-            return row < n
-        return row >= total - n
-
     def front_row_index(self, seat: Sequence[int]) -> int:
         """距讲台排序：0 = 最前排（越大越靠后）。"""
         coord = _as_coord(seat) or (0, 0, 0)
@@ -225,19 +175,10 @@ class Layout:
             return int(row)
         return self.max_rows - 1 - int(row)
 
-    def front_rows(self, n: int) -> List[Coord]:
-        return [s for s in self.all_seats() if self.is_front_row(s, n)]
-
     def seats_in_group(self, index: int) -> List[Coord]:
         if not (0 <= index < len(self.groups)):
             return []
         return self.groups[index].seats(index)
-
-    def seats_in_row(self, row: int) -> List[Coord]:
-        return [s for s in self.all_seats() if s[1] == int(row)]
-
-    def seats_in_col(self, col: int) -> List[Coord]:
-        return [s for s in self.all_seats() if s[2] == int(col)]
 
     def row_range(self, start: int, end: int) -> List[Coord]:
         lo, hi = sorted((int(start), int(end)))
@@ -339,20 +280,11 @@ class Layout:
             disabled_seats=set(self.disabled_seats),
         )
 
-    def equals(self, other: "Layout") -> bool:
-        return self.to_dict() == other.to_dict()
-
-
 def _as_coord(value) -> Optional[Coord]:
     """把 ``"g-r-c"`` / ``(g, r, c)`` / ``[g, r, c]`` 统一成坐标元组。"""
     if value is None:
         return None
-    if isinstance(value, tuple) and len(value) == 3:
-        try:
-            return (int(value[0]), int(value[1]), int(value[2]))
-        except (TypeError, ValueError):
-            return None
-    if isinstance(value, list) and len(value) == 3:
+    if isinstance(value, (tuple, list)) and len(value) == 3:
         try:
             return (int(value[0]), int(value[1]), int(value[2]))
         except (TypeError, ValueError):

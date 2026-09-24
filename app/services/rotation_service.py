@@ -206,9 +206,9 @@ class RotationService:
                     "平移后座位越界：%s（可勾选“边缘回绕”或减小位移）" % make_key(coord)
                 )
             target: Coord = (g, nr, nc)
-            if options.skip_disabled and layout.is_disabled(target):
-                continue
             if layout.is_disabled(target):
+                if options.skip_disabled:
+                    continue
                 raise RotationError("平移后落在空置座位上：%s" % make_key(target))
             if scope_set is not None and target not in scope_set:
                 continue
@@ -266,14 +266,6 @@ class RotationService:
                 rescued += 1
         return len(missing) - rescued
 
-    def shift_rows(self, delta: int = 1) -> RotationPlan:
-        """按组平移：组内学生循环移动（第 1 排 → 第 2 排 …）。"""
-        return self.shift(delta_row=delta, delta_col=0)
-
-    def shift_cols(self, delta: int = 1) -> RotationPlan:
-        """按列平移：整列学生右移 N 列（处理边缘回绕）。"""
-        return self.shift(delta_row=0, delta_col=delta)
-
     # ------------------------------------------------------------ 差异
     def _diff(self, assignment: Mapping[str, str]) -> List[Tuple[str, str, str]]:
         before = self.project.assignment
@@ -310,10 +302,3 @@ class RotationService:
         self.project.assignment = dict(record.assignment)
         self.project.notify("assignment")
         return True
-
-    def history_weeks(self) -> List[int]:
-        return self.project.history_weeks()
-
-
-def preview_shift(project: Project, delta_row: int, delta_col: int) -> RotationPlan:
-    return RotationService(project).shift(delta_row, delta_col)

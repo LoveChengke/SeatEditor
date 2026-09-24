@@ -11,22 +11,16 @@ from typing import List, Optional
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QMessageBox, QProgressBar,
-    QPushButton, QVBoxLayout, QWidget,
+    QDialog, QFormLayout, QHBoxLayout, QLabel,
+    QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
+    QWidget,
 )
 
+from ..common import hline
 from ...config import DEFAULT_TIME_LIMIT, SOLVER_CHUNK
 from ...models.assignment import Solution
 from ...services.rule_engine import RuleEngine
 from ...services.solver import Solver, SolverError
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 class SolverProgressDialog(QDialog):
@@ -66,7 +60,7 @@ class SolverProgressDialog(QDialog):
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
         root.addWidget(self._progress)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         form = QFormLayout()
         form.setSpacing(6)

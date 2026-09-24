@@ -10,23 +10,17 @@ import os
 from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-    QFrame, QGroupBox, QLabel, QMessageBox, QRadioButton, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QDialog, QDialogButtonBox,
+    QFileDialog, QFormLayout, QGroupBox, QLabel,
+    QMessageBox, QRadioButton, QVBoxLayout, QWidget,
 )
 
+from ..common import hline
 from ... import config
 from ...storage.excel_io import ExportOptions
 
 MODE_EXCEL = "excel"
 MODE_PNG = "png"
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 class ExportDialog(QDialog):
@@ -56,7 +50,7 @@ class ExportDialog(QDialog):
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         root.addWidget(hint)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         format_box = QGroupBox("导出格式")
         format_layout = QVBoxLayout(format_box)

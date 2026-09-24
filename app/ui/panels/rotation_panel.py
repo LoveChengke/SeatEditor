@@ -14,11 +14,12 @@ from typing import List, Optional, Set
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox,
-    QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QFrame, QGridLayout,
+    QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
+from ..common import button, confirm, hline, warn
 from ...models.project import EV_ANY, EV_ASSIGNMENT, EV_HISTORY, EV_SELECTIONS, Project
 from ...services.rotation_service import RotationError, RotationOptions, RotationService
 from ..style.theme import PANEL_RULE_WIDTH, Color
@@ -34,26 +35,6 @@ MODE_ITEMS = (
     ("按列平移", MODE_COLS),
     ("自定义向量", MODE_CUSTOM),
 )
-
-
-def _hline() -> QFrame:
-    """浅色分隔线（QSS：QFrame#HLine）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
-
-
-def _button(text: str, slot=None, name: str = "", tooltip: str = "") -> QPushButton:
-    """便捷按钮；``name`` 用于 QSS 的 Primary / Danger / Ghost。"""
-    button = QPushButton(text)
-    if name:
-        button.setObjectName(name)
-    if tooltip:
-        button.setToolTip(tooltip)
-    if slot is not None:
-        button.clicked.connect(slot)
-    return button
 
 
 class RotationPanel(QWidget):
@@ -118,8 +99,8 @@ class RotationPanel(QWidget):
 
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
-        action_row.addWidget(_button("预览", self._on_preview, "Primary", "生成轮换方案（不修改座位）"))
-        action_row.addWidget(_button("应用轮换", self._on_apply, tooltip="把预览方案写入座位表并记入历史"))
+        action_row.addWidget(button("预览", self._on_preview, "Primary", "生成轮换方案（不修改座位）"))
+        action_row.addWidget(button("应用轮换", self._on_apply, tooltip="把预览方案写入座位表并记入历史"))
         form.addLayout(action_row)
 
         self._info_label = QLabel("")
@@ -127,7 +108,7 @@ class RotationPanel(QWidget):
         self._info_label.setWordWrap(True)
         form.addWidget(self._info_label)
 
-        form.addWidget(_hline())
+        form.addWidget(hline())
         history_title = QLabel("轮换历史")
         history_title.setObjectName("PanelTitle")
         form.addWidget(history_title)
@@ -136,7 +117,7 @@ class RotationPanel(QWidget):
         self._history_list.setMinimumHeight(90)
         self._history_list.setMaximumHeight(170)
         form.addWidget(self._history_list)
-        form.addWidget(_button("回退到选中周", self._rollback, tooltip="恢复该周的座位方案"))
+        form.addWidget(button("回退到选中周", self._rollback, tooltip="恢复该周的座位方案"))
         form.addStretch(1)
 
         self._on_mode_changed()
@@ -396,14 +377,7 @@ class RotationPanel(QWidget):
         self._info_label.setStyleSheet("color: %s;" % (Color.DANGER if error else Color.TEXT_SECONDARY))
 
     def _confirm(self, text: str, title: str) -> bool:
-        answer = QMessageBox.question(
-            self,
-            title,
-            text,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return confirm(self, text, title)
 
     def _warn(self, text: str, title: str = "提示") -> None:
-        QMessageBox.warning(self, title, text)
+        warn(self, text, title)

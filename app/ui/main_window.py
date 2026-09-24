@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .common import confirm
 from .. import config
 from ..models.assignment import seat_key_of, unassigned_students
 from ..models.layout import Layout
@@ -1584,12 +1585,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 杂项
     def _confirm(self, text: str, title: str = "确认") -> bool:
-        answer = QMessageBox.question(
-            self, title, text,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return confirm(self, text, title)
 
     def _confirm_discard(self) -> bool:
         if not self.project.dirty:

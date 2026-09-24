@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List, Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from ..models.project import Project
 from ..storage import excel_io
@@ -75,17 +75,3 @@ class ExportService:
         return target
 
     # ------------------------------------------------------------ 汇总
-    @staticmethod
-    def rule_summary(project: Project) -> List[str]:
-        from ..models.rule import describe_rule
-
-        lines: List[str] = []
-        for rule in project.rules:
-            kind = "硬约束" if rule.is_hard else "软约束"
-            state = "启用" if rule.enabled else "停用"
-            lines.append(
-                "[%s/%s] %s：%s"
-                % (kind, state, rule.label,
-                   describe_rule(rule, project.student_name, project.selection_name))
-            )
-        return lines

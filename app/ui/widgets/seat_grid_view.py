@@ -268,9 +268,6 @@ class SeatGridView(QWidget):
         self._conflicts = dict(mapping or {})
         self.refresh()
 
-    def conflicts(self) -> Dict[str, str]:
-        return dict(self._conflicts)
-
     def set_selection_visible(self, flag: bool) -> None:
         self._selection_visible = bool(flag)
         self._apply_selection_style()
@@ -292,9 +289,6 @@ class SeatGridView(QWidget):
     # ------------------------------------------------------------ 选区
     def selected_seats(self) -> Set[Coord]:
         return set(self._selected)
-
-    def selection_keys(self) -> Set[str]:
-        return {make_key(s) for s in self._selected}
 
     def set_selected(self, seats: Iterable) -> None:
         result: Set[Coord] = set()
@@ -344,20 +338,8 @@ class SeatGridView(QWidget):
                 return seat
         return None
 
-    def seat_rect(self, seat) -> Optional[QRect]:
-        widget = self.widget_at(seat)
-        if widget is None:
-            return None
-        return QRect(widget.mapTo(self._canvas, QPoint(0, 0)), widget.size())
-
-    def canvas(self) -> QWidget:
-        return self._canvas
-
     def seat_count(self) -> int:
         return len(self._seat_widgets)
-
-    def content_size(self) -> QSize:
-        return self._canvas.sizeHint()
 
     # ------------------------------------------------------------ 交互
     def _on_seat_clicked(self, seat, modifiers: int) -> None:

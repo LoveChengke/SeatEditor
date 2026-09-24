@@ -33,9 +33,6 @@ class StudentFilter:
     assign_state: str = ASSIGN_ALL
     attrs: Dict[str, Tuple[Optional[float], Optional[float]]] = field(default_factory=dict)
 
-    def is_empty(self) -> bool:
-        return not (self.keyword or self.tags or self.gender or self.assign_state != ASSIGN_ALL)
-
 
 class StudentService:
     """围绕 :class:`Project` 的学生操作。"""
@@ -87,21 +84,7 @@ class StudentService:
             self.project.notify("students")
         return count
 
-    def clear_all(self) -> int:
-        count = len(self.project.students)
-        self.project.students = []
-        self.project.assignment = {}
-        self.project.rebuild_index()
-        self.project.notify("students")
-        return count
-
     # ------------------------------------------------------------ 查询
-    def all(self) -> List[Student]:
-        return list(self.project.students)
-
-    def search(self, keyword: str) -> List[Student]:
-        return [s for s in self.project.students if s.matches(keyword)]
-
     def filter(self, condition: StudentFilter) -> List[Student]:
         result: List[Student] = []
         assigned = set(self.project.assignment.values())
@@ -158,15 +141,6 @@ class StudentService:
     def sorted_students(self, students: Sequence[Student], key: str = "sid", reverse: bool = False) -> List[Student]:
         return sorted(students, key=self.sort_key(key), reverse=reverse)
 
-    def unique_sids(self, students: Sequence[Student]) -> List[str]:
-        seen: Set[str] = set()
-        result: List[str] = []
-        for student in students:
-            if student.sid not in seen:
-                seen.add(student.sid)
-                result.append(student.sid)
-        return result
-
     # ------------------------------------------------------------ 标签
     def add_tag(self, sids: Iterable[str], tag: str) -> int:
         tag = str(tag or "").strip()
@@ -196,49 +170,12 @@ class StudentService:
             self.project.notify("tags")
         return count
 
-    def set_tags(self, sid: str, tags: Iterable[str]) -> bool:
-        student = self.project.get_student(sid)
-        if student is None:
-            return False
-        student.tags = list(tags)
-        student.__post_init__()
-        for tag in student.tags:
-            self.project.ensure_tag(tag)
-        self.project.notify("tags")
-        return True
-
     def tag_usage(self) -> Dict[str, int]:
         counts: Dict[str, int] = {tag.name: 0 for tag in self.project.tags}
         for student in self.project.students:
             for tag in student.tags:
                 counts[tag] = counts.get(tag, 0) + 1
         return counts
-
-    def ensure_tags_exist(self) -> int:
-        """把学生身上出现但标签库缺失的标签补进标签库。"""
-        added = 0
-        for student in self.project.students:
-            for tag in student.tags:
-                if self.project.ensure_tag(tag) is not None and self.project.get_tag(tag) is None:
-                    added += 1
-        return added
-
-    def merge_tags(self, source: str, target: str) -> int:
-        """把 source 标签合并到 target。"""
-        target = str(target or "").strip()
-        if not target or source == target:
-            return 0
-        self.project.ensure_tag(target)
-        count = 0
-        for student in self.project.students:
-            if source in student.tags:
-                student.tags = [t for t in student.tags if t != source]
-                if target not in student.tags:
-                    student.tags.append(target)
-                count += 1
-        self.project.remove_tag(source)
-        self.project.notify("tags")
-        return count
 
     # ------------------------------------------------------------ 文本导入
     @staticmethod
@@ -263,21 +200,3 @@ class StudentService:
             seen.add(sid)
             students.append(Student(sid=sid, name=name, gender=gender))
         return students, problems
-
-    # ------------------------------------------------------------ 统计
-    def stats(self) -> Dict[str, Any]:
-        genders: Dict[str, int] = {}
-        for student in self.project.students:
-            genders[student.gender or "未填"] = genders.get(student.gender or "未填", 0) + 1
-        return {
-            "total": len(self.project.students),
-            "assigned": len([v for v in self.project.assignment.values() if v]),
-            "genders": genders,
-            "attrs": self.project.attr_names(),
-        }
-
-    def attr_range(self, attr: str) -> Tuple[Optional[float], Optional[float]]:
-        values = [s.attrs[attr] for s in self.project.students if attr in s.attrs]
-        if not values:
-            return None, None
-        return min(values), max(values)

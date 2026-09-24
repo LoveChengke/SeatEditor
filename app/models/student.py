@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping
 
 
 def _clean_tags(tags: Any) -> List[str]:
@@ -67,22 +67,12 @@ class Student:
         self.attrs = _clean_attrs(self.attrs)
 
     # ------------------------------------------------------------ 属性
-    @property
-    def display(self) -> str:
-        return self.name or self.sid
-
     def sid_tail(self, n: int = 4) -> str:
         """学号后 n 位，用于座位卡片副文本。"""
         sid = self.sid
         if len(sid) <= n:
             return sid
         return sid[-n:]
-
-    def attr(self, name: str, default: Optional[float] = None) -> Optional[float]:
-        return self.attrs.get(name, default)
-
-    def has_tag(self, tag: str) -> bool:
-        return tag in self.tags
 
     def matches(self, keyword: str) -> bool:
         """搜索匹配：学号 / 姓名 / 标签 / 备注。"""
@@ -119,16 +109,6 @@ class Student:
             tags=data.get("tags", []) or [],
             attrs=data.get("attrs", {}) or {},
             note=data.get("note", "") or "",
-        )
-
-    def clone(self) -> "Student":
-        return Student(
-            sid=self.sid,
-            name=self.name,
-            gender=self.gender,
-            tags=list(self.tags),
-            attrs=dict(self.attrs),
-            note=self.note,
         )
 
     # ------------------------------------------------------------ 排序键

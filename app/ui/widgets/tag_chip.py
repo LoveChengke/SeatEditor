@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath
@@ -139,8 +139,3 @@ class TagFlow(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._rebuild()
-
-
-def chips_for(names: Iterable[str], color_of) -> List[TagChip]:
-    """便捷函数：按名字列表生成胶囊，``color_of(name) -> color``。"""
-    return [TagChip(name, color_of(name)) for name in names]

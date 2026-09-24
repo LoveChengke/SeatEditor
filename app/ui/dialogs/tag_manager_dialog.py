@@ -11,24 +11,18 @@ from typing import Optional
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-    QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-    QPushButton, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QGridLayout, QGroupBox,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
+from ..common import hline
 from ...config import TAG_PALETTE
 from ...services.student_service import StudentService
 from ..style.theme import Color
 
 SWATCH_COLUMNS = 6
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 def _swatch(color: str) -> QIcon:
@@ -62,7 +56,7 @@ class TagManagerDialog(QDialog):
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         root.addWidget(hint)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         self._list = QListWidget()
         self._list.setIconSize(QSize(12, 12))

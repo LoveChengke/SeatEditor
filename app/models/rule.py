@@ -13,8 +13,6 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 HARD = "hard"
 SOFT = "soft"
 
-TYPE_LABELS = {HARD: "硬约束", SOFT: "软约束"}
-
 
 class RuleKind:
     """全部规则种类。"""
@@ -231,10 +229,6 @@ SOFT_KINDS: Tuple[str, ...] = (
 )
 
 
-def spec_of(kind: str) -> Optional[RuleSpec]:
-    return RULE_SPECS.get(kind)
-
-
 def make_rule_id() -> str:
     return uuid.uuid4().hex[:8]
 
@@ -256,8 +250,6 @@ class Rule:
         self.kind = str(self.kind)
         spec = RULE_SPECS.get(self.kind)
         if spec is not None:
-            if self.type not in (HARD, SOFT):
-                self.type = spec.type
             self.type = spec.type
             if not self.name:
                 self.name = spec.label
@@ -295,10 +287,6 @@ class Rule:
     def label(self) -> str:
         spec = self.spec
         return self.name or (spec.label if spec else self.kind)
-
-    def param(self, key: str, default: Any = None) -> Any:
-        value = self.params.get(key, default)
-        return default if value is None else value
 
     def target_sid(self) -> str:
         return str(self.params.get("sid") or "").strip()
@@ -347,20 +335,6 @@ class Rule:
     def target_sid_b(self) -> str:
         return str(self.params.get("sid_b") or "").strip()
 
-    def involves_seat(self, seat_key: str) -> bool:
-        """该规则是否可能受某个座位影响（用于增量校验的粗筛）。"""
-        if self.kind == RuleKind.FIXED_SEAT:
-            return str(self.params.get("seat") or "") == seat_key
-        # 其余规则都可能与任意座位相关（选区/邻接/属性），保守返回 True
-        return True
-
-    def involves_student(self, sid: str) -> bool:
-        if not sid:
-            return False
-        return sid in {
-            self.target_sid(), self.target_sid_a(), self.target_sid_b(),
-        } or self.target_tag() in ("", None)
-
     # ------------------------------------------------------------ 序列化
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -389,10 +363,6 @@ class Rule:
             weight=float(data.get("weight", spec.default_weight if spec else 1.0) or 1.0),
             name=str(data.get("name") or ""),
         )
-
-    def clone(self) -> "Rule":
-        return Rule(self.id, self.type, self.kind, dict(self.params), self.enabled, self.weight, self.name)
-
 
 def make_rule(kind: str) -> Optional[Rule]:
     """按规则种类创建一条带默认参数的规则。"""
@@ -506,7 +476,3 @@ class RuleScore:
     weight: float = 1.0
     raw: float = 0.0
     satisfaction: float = 0.0     # 0~1
-
-    @property
-    def contribution(self) -> float:
-        return self.satisfaction * self.weight

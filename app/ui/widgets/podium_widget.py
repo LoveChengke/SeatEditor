@@ -29,7 +29,3 @@ class PodiumWidget(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(label)
-
-    def set_text(self, text: str) -> None:
-        for child in self.findChildren(QLabel):
-            child.setText(text)

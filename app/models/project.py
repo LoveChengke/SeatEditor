@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from ..config import TAG_PALETTE
-from ..utils.seat_key import dict_to_assignment, make_key, try_parse_key
+from ..utils.seat_key import dict_to_assignment, make_key
 from ..utils.seat_key import Seat as Coord
 from .assignment import Assignment, sanitize, seat_of
 from .layout import Layout
@@ -108,10 +108,6 @@ class Project:
             except Exception:  # noqa: BLE001 - 监听器异常不应打断业务
                 pass
 
-    def touch(self) -> None:
-        """标记为已修改但不触发刷新。"""
-        self.dirty = True
-
     def mark_clean(self) -> None:
         self.dirty = False
 
@@ -134,10 +130,6 @@ class Project:
         return Project._Suspend(self)
 
     # ------------------------------------------------------------ 学生
-    @property
-    def student_index(self) -> Dict[str, Student]:
-        return self._student_index
-
     def rebuild_index(self) -> None:
         self._student_index = {s.sid: s for s in self.students}
 
@@ -302,10 +294,6 @@ class Project:
         return True
 
     # ------------------------------------------------------------ 选区
-    @property
-    def selection_index(self) -> Dict[str, Selection]:
-        return self._selection_index
-
     def get_selection(self, selection_id: str) -> Optional[Selection]:
         return self._selection_index.get(selection_id)
 
@@ -383,29 +371,7 @@ class Project:
     def soft_rules(self) -> List[Rule]:
         return [r for r in self.rules if r.is_soft and r.enabled]
 
-    def fixed_seats(self) -> Dict[Coord, str]:
-        """从规则中提取“固定座位”映射。"""
-        from .rule import RuleKind
-
-        result: Dict[Coord, str] = {}
-        for rule in self.rules:
-            if rule.kind != RuleKind.FIXED_SEAT or not rule.enabled:
-                continue
-            coord = try_parse_key(rule.params.get("seat"))
-            sid = rule.target_sid()
-            if coord is not None and sid:
-                result[coord] = sid
-        return result
-
     # ------------------------------------------------------------ 分配
-    def set_assignment(self, assignment: Mapping[str, str], event: str = EV_ASSIGNMENT) -> None:
-        self.assignment = dict(assignment or {})
-        self.notify(event)
-
-    def clear_assignment(self) -> None:
-        self.assignment = {}
-        self.notify(EV_ASSIGNMENT)
-
     def sanitize_assignment(self) -> List[str]:
         """清洗分配结果，返回发现的问题列表。"""
         from .assignment import is_valid
@@ -425,9 +391,6 @@ class Project:
         self.history.append(record)
         self.notify(EV_HISTORY)
         return record
-
-    def history_weeks(self) -> List[int]:
-        return [r.week for r in self.history]
 
     def get_history(self, week: int) -> Optional[RotationRecord]:
         for record in self.history:
@@ -490,9 +453,6 @@ class Project:
         project.sanitize_assignment()
         project.mark_clean()
         return project
-
-    def clone(self) -> "Project":
-        return Project.from_dict(self.to_dict())
 
     # ------------------------------------------------------------ 摘要
     def summary(self) -> Dict[str, Any]:

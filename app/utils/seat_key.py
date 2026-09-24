@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 Seat = Tuple[int, int, int]
 
@@ -46,16 +46,6 @@ def seat_sort_key(seat: Sequence[int]) -> Tuple[int, int, int]:
     return (int(g), int(r), int(c))
 
 
-def all_seats(groups: Iterable[Sequence[int]]) -> List[Seat]:
-    """按 ``[(rows, cols), ...]`` 生成全部座位。"""
-    seats: List[Seat] = []
-    for gi, (rows, cols) in enumerate(groups):
-        for r in range(int(rows)):
-            for c in range(int(cols)):
-                seats.append((gi, r, c))
-    return seats
-
-
 def neighbors(seat: Seat, rows: int, cols: int) -> List[Seat]:
     """同组内四邻域（上/下/左/右），不含对角。"""
     g, r, c = seat
@@ -64,17 +54,6 @@ def neighbors(seat: Seat, rows: int, cols: int) -> List[Seat]:
         result.append((g, r - 1, c))
     if r < rows - 1:
         result.append((g, r + 1, c))
-    if c > 0:
-        result.append((g, r, c - 1))
-    if c < cols - 1:
-        result.append((g, r, c + 1))
-    return result
-
-
-def horizontal_neighbors(seat: Seat, rows: int, cols: int) -> List[Seat]:
-    """左右相邻（同桌候选）。"""
-    g, r, c = seat
-    result: List[Seat] = []
     if c > 0:
         result.append((g, r, c - 1))
     if c < cols - 1:
@@ -93,12 +72,3 @@ def dict_to_assignment(raw: Dict[str, str] | None) -> Dict[str, str]:  # type: i
             continue
         out[make_key(seat)] = str(v)
     return out
-
-
-def assignment_seats(assignment: Dict[str, str]) -> Set[Seat]:
-    seats: Set[Seat] = set()
-    for k in assignment:
-        seat = try_parse_key(k)
-        if seat is not None:
-            seats.add(seat)
-    return seats

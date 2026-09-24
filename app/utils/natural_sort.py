@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable, List, Tuple
+from typing import Any, Tuple
 
 _NUM_RE = re.compile(r"(\d+)")
 
@@ -17,14 +17,3 @@ def natural_key(text: Any) -> Tuple:
     s = "" if text is None else str(text)
     parts = _NUM_RE.split(s.strip())
     return tuple(int(p) if i % 2 else p.lower() for i, p in enumerate(parts))
-
-
-def natural_sort(items: Iterable[Any], key=None) -> List[Any]:
-    """返回按自然序排序后的列表（不修改入参）。"""
-    if key is None:
-        return sorted(items, key=natural_key)
-    return sorted(items, key=lambda it: natural_key(key(it)))
-
-
-def sid_key(sid: Any) -> Tuple:
-    return natural_key(sid)

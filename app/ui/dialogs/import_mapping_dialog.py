@@ -9,23 +9,17 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFrame, QGridLayout,
-    QHeaderView, QLabel, QMessageBox, QScrollArea, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QGridLayout, QHeaderView, QLabel, QMessageBox,
+    QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
+from ..common import hline
 from ...storage import excel_io
 from ...storage.excel_io import FIELD_LABELS, F_NAME, F_SID
 
 PREVIEW_ROWS = 8
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 def _cell_text(value) -> str:
@@ -79,7 +73,7 @@ class ImportMappingDialog(QDialog):
         tip.setObjectName("Hint")
         tip.setWordWrap(True)
         root.addWidget(tip)
-        root.addWidget(_hline())
+        root.addWidget(hline())
         root.addWidget(self._build_mapping_area(), 1)
         root.addWidget(self._build_table(), 1)
 

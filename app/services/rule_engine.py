@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from ..config import HARD_PENALTY
 from ..models.layout import Layout
@@ -109,12 +109,6 @@ class Evaluation:
     objective: float = 0.0
     score: float = 0.0
     rule_scores: List[RuleScore] = field(default_factory=list)
-
-    def satisfaction(self, rule_id: str) -> float:
-        maximum = self.soft_max.get(rule_id, 0.0)
-        if maximum <= 0:
-            return 1.0
-        return max(0.0, min(1.0, self.soft_raw.get(rule_id, 0.0) / maximum))
 
 
 class RuleEngine:
@@ -694,12 +688,6 @@ class RuleEngine:
             objective += float(rule.weight) * satisfaction
         return objective
 
-    def hard_violation_count(
-        self, assignment: Mapping[str, str], focus: Optional[Iterable[Coord]] = None
-    ) -> int:
-        """只数硬约束违反条数（比构造 Violation 对象快得多）。"""
-        return len(self.hard_terms(assignment, focus))
-
     def max_raw(
         self, assignment: Mapping[str, str], terms: Optional[List[SoftTerm]] = None
     ) -> Dict[str, float]:
@@ -763,17 +751,6 @@ class RuleEngine:
     ) -> List[Violation]:
         """硬约束校验；``seats`` 为 None 时全量校验，否则只校验受影响的座位。"""
         return [term.to_violation() for term in self.hard_terms(assignment, seats)]
-
-    def check_affected(self, assignment: Mapping[str, str], changed_seats: Iterable[Coord]) -> List[Violation]:
-        """增量校验：只查变动座位及其邻居。"""
-        return self.check_hard(assignment, changed_seats)
-
-    def score(self, assignment: Mapping[str, str], students: Any = None, rules: Any = None) -> float:
-        """PRD 接口：综合评分（软约束得分 − 硬约束惩罚）。"""
-        return self.evaluate(assignment).objective
-
-    def score_breakdown(self, assignment: Mapping[str, str]) -> Evaluation:
-        return self.evaluate(assignment)
 
     # ------------------------------------------------------------ 预检
     def precheck(self) -> List[str]:

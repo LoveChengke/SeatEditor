@@ -9,24 +9,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-    QFrame, QLabel, QLineEdit, QMessageBox, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QDoubleSpinBox, QFormLayout, QLabel, QLineEdit,
+    QMessageBox, QScrollArea, QSpinBox, QVBoxLayout,
+    QWidget,
 )
 
+from ..common import hline
 from ...models.rule import (
     F_ATTR, F_BOOL, F_CHOICE, F_INT, F_SELECTION, F_SEAT, F_STUDENT, F_TAG, F_TEXT,
     HARD_KINDS, RULE_SPECS, SOFT_KINDS, Rule, make_rule,
 )
 from ...utils.natural_sort import natural_key
 from ...utils.seat_key import make_key
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 class RuleEditDialog(QDialog):
@@ -54,7 +49,7 @@ class RuleEditDialog(QDialog):
         title = QLabel("编辑规则" if self.rule is not None else "添加规则")
         title.setObjectName("PanelTitle")
         root.addWidget(title)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         head = QFormLayout()
         head.setSpacing(6)

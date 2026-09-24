@@ -6,21 +6,14 @@ from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QGridLayout, QGroupBox, QLabel,
-    QListWidget, QListWidgetItem, QProgressBar, QScrollArea, QSplitter,
-    QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QGridLayout, QGroupBox,
+    QLabel, QListWidget, QListWidgetItem, QProgressBar,
+    QScrollArea, QSplitter, QVBoxLayout, QWidget,
 )
 
+from ..common import hline
 OK_TEXT = "✅ 全部满足"
 WARN_TEXT = "⚠️ %d 条硬约束未满足"
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 class ConflictReportDialog(QDialog):
@@ -61,7 +54,7 @@ class ConflictReportDialog(QDialog):
         )
         summary.setObjectName("Hint")
         root.addWidget(summary)
-        root.addWidget(_hline())
+        root.addWidget(hline())
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self._build_hard_box())
         splitter.addWidget(self._build_soft_box())

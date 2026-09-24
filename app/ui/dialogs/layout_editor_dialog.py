@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from ..common import hline
 from ...models.layout import (
     CARD_SIZES, LAYOUT_TEMPLATES, MAX_COLS, MAX_GAP, MAX_GROUPS, MAX_ROWS, MIN_COLS,
     MIN_GAP, MIN_ROWS, PODIUM_SIDES, Layout, SeatGroup, template_layout,
@@ -37,14 +38,6 @@ PREFERRED_WIDTH = 1040
 PREFERRED_HEIGHT = 660
 MIN_WIDTH = 720
 MIN_HEIGHT = 560
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 def _spin(minimum: int, maximum: int) -> QSpinBox:
@@ -107,7 +100,7 @@ class LayoutEditorDialog(QDialog):
         hint.setObjectName("Hint")
         top.addWidget(hint)
         root.addLayout(top)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         body = QHBoxLayout()
         body.setSpacing(12)

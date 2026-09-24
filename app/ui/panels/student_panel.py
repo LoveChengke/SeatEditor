@@ -14,11 +14,13 @@ from typing import List, Optional, Set
 from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QButtonGroup, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
-    QRadioButton, QToolButton, QVBoxLayout, QWidget, QWidgetAction,
+    QButtonGroup, QComboBox, QDialog, QGridLayout,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QMenu, QRadioButton, QToolButton,
+    QVBoxLayout, QWidget, QWidgetAction,
 )
 
+from ..common import button, confirm, hline, warn
 from ...models.project import EV_ANY, EV_ASSIGNMENT, EV_STUDENTS, EV_TAGS, Project
 from ...services.student_service import (
     ASSIGN_ALL, ASSIGN_ASSIGNED, ASSIGN_UNASSIGNED, TAG_MODE_ALL, TAG_MODE_ANY,
@@ -28,26 +30,6 @@ from ..style.theme import PANEL_STUDENT_WIDTH
 from ..widgets.student_table import StudentTableModel, StudentTableView
 
 SEARCH_DEBOUNCE_MS = 150
-
-
-def _hline() -> QFrame:
-    """浅色分隔线（QSS：QFrame#HLine）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
-
-
-def _button(text: str, slot=None, name: str = "", tooltip: str = "") -> QPushButton:
-    """便捷按钮；``name`` 用于 QSS 的 Primary / Danger / Ghost。"""
-    button = QPushButton(text)
-    if name:
-        button.setObjectName(name)
-    if tooltip:
-        button.setToolTip(tooltip)
-    if slot is not None:
-        button.clicked.connect(slot)
-    return button
 
 
 class StudentPanel(QWidget):
@@ -158,20 +140,20 @@ class StudentPanel(QWidget):
         self._stats_label = QLabel("共 0 人 · 已分配 0")
         self._stats_label.setObjectName("Hint")
         root.addWidget(self._stats_label)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         # ---- 底部按钮
         grid = QGridLayout()
         grid.setSpacing(6)
-        grid.addWidget(_button("导入 Excel", self.import_requested.emit, "Primary", "从 Excel 导入名单"), 0, 0)
-        grid.addWidget(_button("粘贴文本", self._on_text_import, tooltip="从剪贴板文本快速录入名单"), 0, 1)
-        grid.addWidget(_button("添加", self.add_requested.emit, tooltip="手动添加一名学生"), 1, 0)
-        grid.addWidget(_button("编辑", self._on_edit, tooltip="编辑选中学生（双击表格亦可）"), 1, 1)
-        grid.addWidget(_button("删除", self._on_delete, "Danger", "删除选中的学生"), 2, 0)
-        grid.addWidget(_button("批量标签", self._on_tag, tooltip="给选中学生批量添加 / 移除标签"), 2, 1)
-        grid.addWidget(_button("导出名单", self.export_requested.emit, "Ghost", "导出当前名单"), 3, 0)
+        grid.addWidget(button("导入 Excel", self.import_requested.emit, "Primary", "从 Excel 导入名单"), 0, 0)
+        grid.addWidget(button("粘贴文本", self._on_text_import, tooltip="从剪贴板文本快速录入名单"), 0, 1)
+        grid.addWidget(button("添加", self.add_requested.emit, tooltip="手动添加一名学生"), 1, 0)
+        grid.addWidget(button("编辑", self._on_edit, tooltip="编辑选中学生（双击表格亦可）"), 1, 1)
+        grid.addWidget(button("删除", self._on_delete, "Danger", "删除选中的学生"), 2, 0)
+        grid.addWidget(button("批量标签", self._on_tag, tooltip="给选中学生批量添加 / 移除标签"), 2, 1)
+        grid.addWidget(button("导出名单", self.export_requested.emit, "Ghost", "导出当前名单"), 3, 0)
         grid.addWidget(
-            _button(
+            button(
                 "名单模板",
                 self.template_requested.emit,
                 "Ghost",
@@ -320,9 +302,9 @@ class StudentPanel(QWidget):
             pass
         finally:
             self._tag_populating = False
-        self._update_tag_button()
+        self._update_tagbutton()
 
-    def _update_tag_button(self) -> None:
+    def _update_tagbutton(self) -> None:
         count = len(self._checked_tags)
         self._tag_button.setText("标签筛选 (%d)" % count if count else "标签筛选")
 
@@ -334,7 +316,7 @@ class StudentPanel(QWidget):
             self._checked_tags.add(name)
         else:
             self._checked_tags.discard(name)
-        self._update_tag_button()
+        self._update_tagbutton()
         self._apply_filter()
 
     def _clear_tag_checks(self) -> None:
@@ -397,28 +379,6 @@ class StudentPanel(QWidget):
         if students:
             self.students_imported.emit(students)
 
-    # ------------------------------------------------------------ 学生编辑对话框（供主窗口复用）
-    def prompt_student(self, student=None):
-        """弹出添加 / 编辑学生对话框，返回 ``Student`` 或 ``None``（不修改项目）。"""
-        if isinstance(student, str):
-            student = self._project.get_student(student) if self._project is not None else None
-            if student is None:
-                self._warn("找不到该学生。")
-                return None
-        try:
-            from ..dialogs.student_edit_dialog import StudentEditDialog
-        except Exception as exc:  # noqa: BLE001 - 对话框缺失不影响其余功能
-            self._warn("学生编辑功能不可用：%s" % exc)
-            return None
-        try:
-            dialog = StudentEditDialog(self._project, student, self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return None
-            return dialog.result_student
-        except Exception as exc:  # noqa: BLE001
-            self._warn("学生编辑失败：%s" % exc)
-            return None
-
     # ------------------------------------------------------------ 右键菜单
     def _on_context_menu(self, pos: QPoint) -> None:
         index = self._view.indexAt(pos)
@@ -476,14 +436,7 @@ class StudentPanel(QWidget):
 
     # ------------------------------------------------------------ 工具
     def _confirm(self, text: str, title: str) -> bool:
-        answer = QMessageBox.question(
-            self,
-            title,
-            text,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return confirm(self, text, title)
 
     def _warn(self, text: str, title: str = "提示") -> None:
-        QMessageBox.warning(self, title, text)
+        warn(self, text, title)

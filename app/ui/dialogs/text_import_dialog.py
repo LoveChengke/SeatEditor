@@ -5,24 +5,18 @@ from __future__ import annotations
 from typing import List, Optional
 
 from PyQt6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFrame, QGroupBox, QHBoxLayout,
-    QLabel, QMessageBox, QPlainTextEdit, QVBoxLayout, QWidget,
+    QComboBox, QDialog, QDialogButtonBox, QGroupBox,
+    QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit,
+    QVBoxLayout, QWidget,
 )
 
+from ..common import hline
 from ...models.student import Student
 from ...services.student_service import StudentService
 
 MAX_PROBLEMS = 5
 HINT = "每行一位：学号 姓名 性别（性别可省略）"
 SAMPLE = "示例：\n1001 张三 男\n1002 李四 女\n1003 王五"
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 class TextImportDialog(QDialog):
@@ -50,7 +44,7 @@ class TextImportDialog(QDialog):
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         root.addWidget(hint)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         self._text = QPlainTextEdit()
         self._text.setPlaceholderText("在此粘贴名单，一行一位学生…")

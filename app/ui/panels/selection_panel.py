@@ -14,34 +14,15 @@ from typing import Optional, Set
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-    QVBoxLayout, QWidget,
+    QAbstractItemView, QGridLayout, QHBoxLayout, QInputDialog,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMessageBox, QVBoxLayout, QWidget,
 )
 
+from ..common import button, confirm, hline, warn
 from ...models.project import EV_ANY, EV_SELECTIONS, Project
 from ...utils.seat_key import Seat as Coord
 from ..style.theme import PANEL_RULE_WIDTH, Color
-
-
-def _hline() -> QFrame:
-    """浅色分隔线（QSS：QFrame#HLine）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
-
-
-def _button(text: str, slot=None, name: str = "", tooltip: str = "") -> QPushButton:
-    """便捷按钮；``name`` 用于 QSS 的 Primary / Danger / Ghost。"""
-    button = QPushButton(text)
-    if name:
-        button.setObjectName(name)
-    if tooltip:
-        button.setToolTip(tooltip)
-    if slot is not None:
-        button.clicked.connect(slot)
-    return button
 
 
 def _color_icon(color: str) -> QIcon:
@@ -95,20 +76,20 @@ class SelectionPanel(QWidget):
         self._list.setMinimumHeight(120)
         self._list.itemDoubleClicked.connect(lambda _item: self._apply_current())
         root.addWidget(self._list, 1)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         grid = QGridLayout()
         grid.setSpacing(6)
         grid.addWidget(
-            _button("用当前选中座位新建选区", self._create_from_seats, "Primary", "把座位表当前框选保存为选区"),
+            button("用当前选中座位新建选区", self._create_from_seats, "Primary", "把座位表当前框选保存为选区"),
             0, 0, 1, 2,
         )
-        grid.addWidget(_button("应用高亮", self._apply_current, tooltip="在座位表上高亮该选区"), 1, 0)
-        grid.addWidget(_button("重命名", self._rename_current), 1, 1)
-        grid.addWidget(_button("删除", self._delete_current, "Danger", "删除该选区"), 2, 0)
-        grid.addWidget(_button("清空座位", self._batch_clear, tooltip="清空当前选中座位上的学生"), 2, 1)
-        grid.addWidget(_button("设为空置", self._batch_disable, tooltip="当前选中座位不参与排位"), 3, 0)
-        grid.addWidget(_button("批量分配", self._batch_assign, tooltip="把未分配学生依次放入这些座位"), 3, 1)
+        grid.addWidget(button("应用高亮", self._apply_current, tooltip="在座位表上高亮该选区"), 1, 0)
+        grid.addWidget(button("重命名", self._rename_current), 1, 1)
+        grid.addWidget(button("删除", self._delete_current, "Danger", "删除该选区"), 2, 0)
+        grid.addWidget(button("清空座位", self._batch_clear, tooltip="清空当前选中座位上的学生"), 2, 1)
+        grid.addWidget(button("设为空置", self._batch_disable, tooltip="当前选中座位不参与排位"), 3, 0)
+        grid.addWidget(button("批量分配", self._batch_assign, tooltip="把未分配学生依次放入这些座位"), 3, 1)
         root.addLayout(grid)
 
         quick_hint = QLabel("快捷选区")
@@ -116,9 +97,9 @@ class SelectionPanel(QWidget):
         root.addWidget(quick_hint)
         quick_row = QHBoxLayout()
         quick_row.setSpacing(6)
-        quick_row.addWidget(_button("按分组", self._quick_by_group, "Ghost"))
-        quick_row.addWidget(_button("按行范围", self._quick_by_row, "Ghost"))
-        quick_row.addWidget(_button("按列范围", self._quick_by_col, "Ghost"))
+        quick_row.addWidget(button("按分组", self._quick_by_group, "Ghost"))
+        quick_row.addWidget(button("按行范围", self._quick_by_row, "Ghost"))
+        quick_row.addWidget(button("按列范围", self._quick_by_col, "Ghost"))
         root.addLayout(quick_row)
 
     # ------------------------------------------------------------ 对外接口
@@ -340,14 +321,7 @@ class SelectionPanel(QWidget):
 
     # ------------------------------------------------------------ 工具
     def _confirm(self, text: str, title: str) -> bool:
-        answer = QMessageBox.question(
-            self,
-            title,
-            text,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return confirm(self, text, title)
 
     def _warn(self, text: str, title: str = "提示") -> None:
-        QMessageBox.warning(self, title, text)
+        warn(self, text, title)

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from .. import config
 from ..models.project import Project
@@ -170,36 +169,3 @@ class JsonProjectStore:
                 config.AUTOSAVE_FILE.unlink()
         except OSError:
             pass
-
-    @staticmethod
-    def backup(path: str | Path, suffix: str = ".bak") -> Optional[Path]:  # type: ignore[valid-type]
-        source = Path(path)
-        if not source.exists():
-            return None
-        target = source.with_name(source.name + suffix)
-        try:
-            shutil.copyfile(source, target)
-            return target
-        except OSError:
-            return None
-
-
-def load_project(path: str | Path) -> Project:  # type: ignore[valid-type]
-    return JsonProjectStore.load(path)
-
-
-def save_project(project: Project, path: str | Path) -> Path:  # type: ignore[valid-type]
-    return JsonProjectStore.save(project, path)
-
-
-def recent_files() -> List[str]:
-    """最近打开列表（存储于 QSettings，无 Qt 时返回空）。"""
-    try:
-        from PyQt6.QtCore import QSettings
-    except Exception:  # noqa: BLE001
-        return []
-    settings = QSettings(config.ORG_NAME, config.APP_ID)
-    value = settings.value(config.SK_RECENT_FILES, [])
-    if isinstance(value, str):
-        value = [value]
-    return [str(v) for v in (value or []) if v]

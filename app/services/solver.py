@@ -21,7 +21,7 @@ from ..models.layout import Layout
 from ..models.student import Student
 from ..utils.seat_key import make_key, try_parse_key
 from ..utils.seat_key import Seat as Coord
-from .rule_engine import Evaluation, RuleEngine
+from .rule_engine import RuleEngine
 
 
 class SolverError(Exception):
@@ -250,11 +250,6 @@ class Solver:
             self._best = dict(self._assignment)
             self._objective = value
 
-    def _consider(self, evaluation: Evaluation) -> None:
-        if evaluation.objective > self._best_obj:
-            self._best_obj = evaluation.objective
-            self._best = dict(self._assignment)
-
     # ------------------------------------------------------------ 结果
     @property
     def best_assignment(self) -> Dict[str, str]:
@@ -266,9 +261,6 @@ class Solver:
             return 1.0
         elapsed = time.time() - self._start if self._start else 0.0
         return max(0.0, min(1.0, elapsed / self.time_limit))
-
-    def done(self) -> bool:
-        return self._finished
 
     def best_solution(self) -> Solution:
         assignment = self.best_assignment
@@ -312,15 +304,3 @@ def _should_keep(engine: RuleEngine, initial: Mapping[str, str]) -> bool:
     return seated >= max(1, total // 2)
 
 
-def solve_once(
-    engine: RuleEngine,
-    students: Sequence[Student],
-    time_limit: float = DEFAULT_TIME_LIMIT,
-    locked_seats: Optional[Sequence[Coord]] = None,
-    initial: Optional[Mapping[str, str]] = None,
-    seed: Optional[int] = None,
-) -> Solution:
-    """同步求解（命令行 / 测试用）。"""
-    solver = Solver(engine, students, time_limit=time_limit, locked_seats=locked_seats, seed=seed)
-    solver.prepare(initial)
-    return solver.solve()

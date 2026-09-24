@@ -5,33 +5,13 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
 
-from ..utils.seat_key import (
-    assignment_seats,
-    dict_to_assignment,
-    make_key,
-    parse_key,
-    seat_sort_key,
-    try_parse_key,
-)
+from ..utils.seat_key import make_key, try_parse_key
 from ..utils.seat_key import Seat as Coord
 
 Assignment = Dict[str, str]
-
-
-def empty() -> Assignment:
-    return {}
-
-
-def clone(assignment: Mapping[str, str]) -> Assignment:
-    return dict(assignment or {})
-
-
-def deep_clone(assignment: Mapping[str, str]) -> Assignment:
-    return copy.deepcopy(dict(assignment or {}))
 
 
 def seat_of(assignment: Mapping[str, str], sid: str) -> Optional[Coord]:
@@ -55,22 +35,9 @@ def seat_key_of(assignment: Mapping[str, str], sid: str) -> Optional[str]:
     return None
 
 
-def student_at(assignment: Mapping[str, str], seat: Sequence[int] | str) -> Optional[str]:  # type: ignore[valid-type]
-    key = seat if isinstance(seat, str) else make_key(seat)
-    return assignment.get(key)
-
-
 def unassigned_students(assignment: Mapping[str, str], all_sids: Iterable[str]) -> List[str]:
     assigned = set(assignment.values())
     return [sid for sid in all_sids if sid not in assigned]
-
-
-def assigned_count(assignment: Mapping[str, str]) -> int:
-    return len([v for v in assignment.values() if v])
-
-
-def assigned_sids(assignment: Mapping[str, str]) -> Set[str]:
-    return {v for v in assignment.values() if v}
 
 
 def is_valid(assignment: Mapping[str, str], layout) -> List[str]:
@@ -116,20 +83,6 @@ def sanitize(assignment: Mapping[str, str], layout, valid_sids: Optional[Iterabl
     return result
 
 
-def to_seat_map(assignment: Mapping[str, str]) -> Dict[Coord, str]:
-    """``{seat_key: sid}`` -> ``{coord: sid}``。"""
-    result: Dict[Coord, str] = {}
-    for key, sid in (assignment or {}).items():
-        coord = try_parse_key(key)
-        if coord is not None and sid:
-            result[coord] = sid
-    return result
-
-
-def from_seat_map(seat_map: Mapping[Coord, str]) -> Assignment:
-    return {make_key(coord): sid for coord, sid in seat_map.items() if sid}
-
-
 @dataclass
 class Solution:
     """一次排位的结果。"""
@@ -152,22 +105,3 @@ class Solution:
     @property
     def hard_count(self) -> int:
         return len(self.hard_violations)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "score": self.score,
-            "soft_score": self.soft_score,
-            "restarts": self.restarts,
-            "iterations": self.iterations,
-            "elapsed": self.elapsed,
-            "hard_count": self.hard_count,
-        }
-
-
-def sorted_keys(assignment: Mapping[str, str]) -> List[str]:
-    keys = []
-    for key in assignment:
-        coord = try_parse_key(key)
-        if coord is not None:
-            keys.append(coord)
-    return [make_key(c) for c in sorted(keys, key=seat_sort_key)]

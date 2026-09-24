@@ -106,11 +106,6 @@ STATUS_LABELS = {
 }
 
 
-def font_family() -> str:
-    """返回 QSS 可用的字体族列表字符串。"""
-    return ", ".join('"%s"' % f for f in FONT_FAMILIES if f != "sans-serif") + ", sans-serif"
-
-
 # 精简环境（离屏渲染 / 绿色版运行环境）里 Qt 的字体库可能是空的，
 # 这时直接从系统字体目录补注册，避免整屏中文变成方框。
 SYSTEM_FONT_CANDIDATES = (

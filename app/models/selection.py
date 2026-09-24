@@ -51,17 +51,6 @@ class Selection:
     def sorted_seats(self) -> List[Coord]:
         return sorted(self.seats, key=seat_sort_key)
 
-    def bounds(self) -> Dict[str, int]:
-        """返回 ``{min_row, max_row, min_col, max_col}``，空选区返回全 0。"""
-        if not self.seats:
-            return {"min_row": 0, "max_row": 0, "min_col": 0, "max_col": 0}
-        rows = [s[1] for s in self.seats]
-        cols = [s[2] for s in self.seats]
-        return {
-            "min_row": min(rows), "max_row": max(rows),
-            "min_col": min(cols), "max_col": max(cols),
-        }
-
     @property
     def size(self) -> int:
         return len(self.seats)
@@ -77,19 +66,6 @@ class Selection:
         for seat in seats:
             coord = try_parse_key(seat) if not isinstance(seat, (tuple, list)) else tuple(int(v) for v in seat)
             self.seats.discard(coord)  # type: ignore[arg-type]
-
-    def toggle(self, seat: Sequence[int]) -> bool:
-        """返回切换后是否在选区内。"""
-        coord = tuple(int(v) for v in seat)
-        if coord in self.seats:
-            self.seats.discard(coord)
-            return False
-        self.seats.add(coord)  # type: ignore[arg-type]
-        return True
-
-    def intersect(self, other: Iterable[Sequence[int]]) -> None:
-        keep = _clean_seats(other)
-        self.seats &= keep
 
     # ------------------------------------------------------------ 序列化
     def to_dict(self) -> Dict[str, Any]:
@@ -108,9 +84,6 @@ class Selection:
             seats=_clean_seats(data.get("seats") or []),
             color=str(data.get("color") or DEFAULT_SELECTION_COLOR),
         )
-
-    def clone(self) -> "Selection":
-        return Selection(self.id, self.name, set(self.seats), self.color)
 
 
 def make_selection_id() -> str:

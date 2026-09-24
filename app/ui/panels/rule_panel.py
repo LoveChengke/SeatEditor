@@ -14,36 +14,17 @@ from typing import Dict, List, Optional
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QDialog, QFrame, QHBoxLayout, QLabel, QListWidget,
-    QListWidgetItem, QMenu, QMessageBox, QPushButton, QToolButton, QVBoxLayout,
-    QWidget,
+    QAbstractItemView, QDialog, QHBoxLayout, QLabel,
+    QListWidget, QListWidgetItem, QMenu, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
+from ..common import button, confirm, hline, warn
 from ...models.project import EV_ANY, EV_RULES, EV_SELECTIONS, EV_STUDENTS, EV_TAGS, Project
 from ...models.rule import (
     HARD, HARD_KINDS, RULE_SPECS, SOFT, SOFT_KINDS, Rule, describe_rule, make_rule,
 )
 from ..style.theme import PANEL_RULE_WIDTH
-
-
-def _hline() -> QFrame:
-    """浅色分隔线（QSS：QFrame#HLine）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
-
-
-def _button(text: str, slot=None, name: str = "", tooltip: str = "") -> QPushButton:
-    """便捷按钮；``name`` 用于 QSS 的 Primary / Danger / Ghost。"""
-    button = QPushButton(text)
-    if name:
-        button.setObjectName(name)
-    if tooltip:
-        button.setToolTip(tooltip)
-    if slot is not None:
-        button.clicked.connect(slot)
-    return button
 
 
 class RulePanel(QWidget):
@@ -87,10 +68,10 @@ class RulePanel(QWidget):
         self._add_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._add_button.setMenu(self._build_add_menu())
         toolbar.addWidget(self._add_button, 1)
-        toolbar.addWidget(_button("编辑", self._edit_rule))
-        toolbar.addWidget(_button("删除", self._delete_rule, "Danger", "删除选中规则"))
+        toolbar.addWidget(button("编辑", self._edit_rule))
+        toolbar.addWidget(button("删除", self._delete_rule, "Danger", "删除选中规则"))
         root.addLayout(toolbar)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         self._hard_title = QLabel("硬约束")
         self._hard_title.setObjectName("PanelTitle")
@@ -334,14 +315,7 @@ class RulePanel(QWidget):
 
     # ------------------------------------------------------------ 工具
     def _confirm(self, text: str, title: str) -> bool:
-        answer = QMessageBox.question(
-            self,
-            title,
-            text,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return confirm(self, text, title)
 
     def _warn(self, text: str, title: str = "提示") -> None:
-        QMessageBox.warning(self, title, text)
+        warn(self, text, title)

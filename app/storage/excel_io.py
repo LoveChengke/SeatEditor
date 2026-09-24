@@ -90,11 +90,6 @@ class ImportResult:
     def ok(self) -> bool:
         return bool(self.students)
 
-    @property
-    def error_rows(self) -> List[int]:
-        return [e.row for e in self.errors]
-
-
 def _norm(text: Any) -> str:
     return re.sub(r"[\s_\-（）()【】\[\]:：]+", "", str(text or "")).strip().lower()
 
@@ -112,15 +107,14 @@ def _cell_text(value: Any) -> str:
 def _cell_number(value: Any) -> Optional[float]:
     if value is None or value == "":
         return None
-    if isinstance(value, bool):
-        return float(value)
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float)):   # bool 也是 int 的子类
         return float(value)
     text = str(value).strip().replace("，", "").replace(",", "")
     match = re.match(r"^-?\d+(\.\d+)?", text)
     if not match:
         return None
     try:
+        # \d 能匹配阿拉伯-印度数字等 Unicode 数字，float() 对它们会抛错
         return float(match.group(0))
     except ValueError:
         return None
@@ -341,19 +335,6 @@ def build_students(
     if not result.students and not result.errors:
         result.warnings.append("没有读取到任何有效数据行")
     return result
-
-
-def import_students(
-    path: str | Path,  # type: ignore[valid-type]
-    sheet: str = "",
-    mapping: Optional[Mapping[str, str]] = None,
-    skip_invalid: bool = True,
-    existing_sids: Optional[Iterable[str]] = None,
-) -> ImportResult:
-    """一步完成：读表 → 映射 → 生成学生。"""
-    preview = read_preview(path, sheet)
-    final_mapping = dict(mapping) if mapping else auto_mapping(preview.headers)
-    return build_students(preview.headers, preview.rows, final_mapping, skip_invalid, existing_sids)
 
 
 # ------------------------------------------------------------------ 导出

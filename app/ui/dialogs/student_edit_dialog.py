@@ -10,23 +10,18 @@ import re
 from typing import Dict, List, Optional
 
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
-    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox,
+    QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QMessageBox, QPushButton,
+    QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
+from ..common import hline
 from ...models.student import Student
 
 TAG_SPLIT = re.compile(r"[,，;；、|/\s]+")
 GENDERS = (("", "（未填）"), ("男", "男"), ("女", "女"))
-
-
-def _hline() -> QFrame:
-    """1px 分隔线（QSS 中的 ``HLine``）。"""
-    line = QFrame()
-    line.setObjectName("HLine")
-    line.setFixedHeight(1)
-    return line
 
 
 def _split_tags(text: str) -> List[str]:
@@ -60,7 +55,7 @@ class StudentEditDialog(QDialog):
         title = QLabel("编辑学生信息" if self.student is not None else "添加学生")
         title.setObjectName("PanelTitle")
         root.addWidget(title)
-        root.addWidget(_hline())
+        root.addWidget(hline())
 
         host = QWidget()
         body = QVBoxLayout(host)

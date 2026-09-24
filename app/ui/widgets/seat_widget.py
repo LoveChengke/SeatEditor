@@ -167,14 +167,6 @@ class SeatWidget(QFrame):
     def seat(self) -> Tuple[int, int, int]:
         return self._seat
 
-    @property
-    def student(self):
-        return self._student
-
-    @property
-    def sid(self) -> str:
-        return self._student.sid if self._student is not None else ""
-
     def _apply_size(self) -> None:
         self.setFixedSize(QSize(self._width, self._height))
 

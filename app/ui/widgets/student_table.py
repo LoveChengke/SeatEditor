@@ -56,22 +56,12 @@ class StudentTableModel(QAbstractTableModel):
         if event in (EV_ASSIGNMENT, EV_STUDENTS, EV_TAGS, "any"):
             self.refresh()
 
-    @property
-    def project(self) -> Project:
-        return self._project
-
-    def service(self):
-        return self._service
-
     # ------------------------------------------------------------ 行数据
     def set_students(self, students: Sequence[Student]) -> None:
         self.beginResetModel()
         self._students = list(students or [])
         self._apply_sort()
         self.endResetModel()
-
-    def students(self) -> List[Student]:
-        return list(self._students)
 
     def student_at(self, row: int) -> Optional[Student]:
         if 0 <= row < len(self._students):
@@ -236,7 +226,6 @@ class StudentTableView(QTableView):
         # 注意：QHeaderView 在还没有 model 时按列设置 resizeMode 会导致 Qt 崩溃，
         # 因此列宽/列模式统一放到 setModel 之后再配置。
         self.horizontalHeader().setStretchLastSection(True)
-        self._header_configured = False
 
     # ------------------------------------------------------------ 模型
     def setModel(self, model) -> None:  # noqa: N802 - Qt 命名
@@ -260,7 +249,6 @@ class StudentTableView(QTableView):
         self.setColumnWidth(COL_NAME, 76)
         self.setColumnWidth(COL_TAGS, 110)
         self.setColumnWidth(COL_ATTRS, 120)
-        self._header_configured = True
 
     # ------------------------------------------------------------ 拖拽
     def selected_sids(self) -> List[str]:
