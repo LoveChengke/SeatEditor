@@ -120,47 +120,59 @@ def _cell_number(value: Any) -> Optional[float]:
         return None
 
 
+def _can_substring(alias: str) -> bool:
+    """这个别名能不能参与「包含」匹配。
+
+    两字母的 ASCII 别名太容易误伤：``SID_ALIASES`` 里的 ``"no"`` 会让
+    「备注note」被判成学号列，整列备注被当成学号灌进项目。
+    这类别名只做全等匹配。
+    """
+    if alias.isascii():
+        return len(alias) >= 3
+    return len(alias) >= 2
+
+
 def auto_mapping(headers: Sequence[str]) -> Dict[str, str]:
-    """按常见别名自动映射表头 -> 字段键。"""
+    """按常见别名自动映射表头 -> 字段键。
+
+    每个表头先试全等（无歧义），不行再试「包含」，且包含匹配里
+    **最长的别名优先**——「备注note」因此命中 note（4 字母）而不是
+    sid 的 no（2 字母）。字段本身的优先级顺序只在别名等长时起作用。
+    """
+    fields: List[Tuple[str, List[str]]] = [
+        (F_SID, [n for n in (_norm(a) for a in config.SID_ALIASES) if n]),
+        (F_NAME, [n for n in (_norm(a) for a in config.NAME_ALIASES) if n]),
+        (F_GENDER, [n for n in (_norm(a) for a in config.GENDER_ALIASES) if n]),
+        (F_TAGS, [n for n in (_norm(a) for a in config.TAG_ALIASES) if n]),
+        (F_NOTE, [n for n in (_norm(a) for a in config.NOTE_ALIASES) if n]),
+    ]
     mapping: Dict[str, str] = {}
     used_fields = set()
-
-    def match(norm_header: str, aliases: Sequence[str]) -> bool:
-        for alias in aliases:
-            na = _norm(alias)
-            if not na:
-                continue
-            if norm_header == na:
-                return True
-        for alias in aliases:
-            na = _norm(alias)
-            if na and na in norm_header:
-                return True
-        return False
 
     for header in headers:
         nh = _norm(header)
         if not nh:
             continue
-        if F_SID not in used_fields and match(nh, config.SID_ALIASES):
-            mapping[header] = F_SID
-            used_fields.add(F_SID)
-        elif F_NAME not in used_fields and match(nh, config.NAME_ALIASES):
-            mapping[header] = F_NAME
-            used_fields.add(F_NAME)
-        elif F_GENDER not in used_fields and match(nh, config.GENDER_ALIASES):
-            mapping[header] = F_GENDER
-            used_fields.add(F_GENDER)
-        elif F_TAGS not in used_fields and match(nh, config.TAG_ALIASES):
-            mapping[header] = F_TAGS
-            used_fields.add(F_TAGS)
-        elif F_NOTE not in used_fields and match(nh, config.NOTE_ALIASES):
-            mapping[header] = F_NOTE
-            used_fields.add(F_NOTE)
-        else:
-            attr_name = _guess_attr_name(header)
-            if attr_name:
-                mapping[header] = F_ATTR_PREFIX + attr_name
+        hit = ""
+        for field, aliases in fields:                 # 全等
+            if field not in used_fields and nh in aliases:
+                hit = field
+                break
+        if not hit:                                   # 包含：最长别名优先
+            best_len = 0
+            for field, aliases in fields:
+                if field in used_fields:
+                    continue
+                for alias in aliases:
+                    if _can_substring(alias) and alias in nh and len(alias) > best_len:
+                        hit, best_len = field, len(alias)
+        if hit:
+            mapping[header] = hit
+            used_fields.add(hit)
+            continue
+        attr_name = _guess_attr_name(header)
+        if attr_name:
+            mapping[header] = F_ATTR_PREFIX + attr_name
     return mapping
 
 
