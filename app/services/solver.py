@@ -6,6 +6,10 @@
 
 座位占用集合在整个求解过程固定（固定座位 / 锁定座位 / 空座位都不变），
 只有学生之间的相对位置被搜索——这正好符合教师“座位布局已定”的心智模型。
+
+已经排过位时，当前方案只作为**初始解**（``_seed_assignment``）：教师手工微调的
+结果被保留为搜索起点，但所有可交换座位依然参与搜索。否则改完规则再点「一键排位」
+会因为“没有可交换的座位”立刻结束，结果与上一次完全相同。
 """
 
 from __future__ import annotations
@@ -126,20 +130,22 @@ class Solver:
                 seated[coord] = sid
                 used_sids.add(sid)
 
-        # 3) 沿用当前方案（已经排过位时才沿用，避免把“随机旧数据”当初始解）
-        if self.keep_current and _should_keep(self.engine, initial):
-            for coord in available:
-                if coord in seated or coord in self.locked:
-                    continue
-                sid = initial.get(make_key(coord), "")
-                if sid and sid in sid_set and sid not in used_sids:
-                    seated[coord] = sid
-                    used_sids.add(sid)
-
         free_sids = [sid for sid in sids if sid not in used_sids]
         movable = [s for s in available if s not in seated and s not in self.locked]
-        # 让空座位落在靠后的位置：优先占用靠前的座位
-        movable.sort(key=lambda s: (layout.front_row_index(s), s[0], s[2]))
+        # 3) 沿用当前方案：**只当作初始解，不冻结座位**。
+        # 曾经的写法是把当前方案里的学生直接落进 seated，导致没有可交换的座位，
+        # 排位秒退且结果与上一次完全相同——教师改完规则再点「一键排位」毫无反应。
+        warm = self.keep_current and _should_keep(self.engine, initial)
+        if warm:
+            # 已经坐了人的座位优先保留（当前方案原样作为起点），
+            # 其余名额照旧按「靠前优先」补齐，让空座位落在靠后位置。
+            movable.sort(key=lambda s: (
+                0 if initial.get(make_key(s)) in sid_set else 1,
+                layout.front_row_index(s), s[0], s[2],
+            ))
+        else:
+            # 让空座位落在靠后的位置：优先占用靠前的座位
+            movable.sort(key=lambda s: (layout.front_row_index(s), s[0], s[2]))
         if len(free_sids) > len(movable):
             raise SolverError("可用座位不足，无法安排全部学生（可用 %d，需要 %d）" % (len(movable), len(free_sids)))
         chosen = self._pick_seats(movable, seated, len(free_sids))
@@ -149,7 +155,7 @@ class Solver:
         self._base = {make_key(coord): sid for coord, sid in seated.items()}
 
         # 4) 初始解 + 预热的满分基准
-        self._assignment = self._randomize()
+        self._assignment = self._seed_assignment(initial) if warm else self._randomize()
         self._max_raw = self.engine.max_raw(self._assignment)
         self._objective = self.engine.objective(self._assignment, max_raw=self._max_raw)
         self._best_obj = self._objective
@@ -240,6 +246,27 @@ class Solver:
         pool = list(self._free_sids)
         self.random.shuffle(pool)
         for coord, sid in zip(self._movable, pool):
+            assignment[make_key(coord)] = sid
+        return assignment
+
+    def _seed_assignment(self, initial: Mapping[str, str]) -> Dict[str, str]:
+        """把当前方案当作初始解：已入座的学生留在原座位，其余学生按顺序补空位。
+
+        与 :meth:`_randomize` 的区别只是「起点」——搜索时所有 ``_movable``
+        座位依然可以互换，所以新加/改动的规则照样能被满足，而教师手工微调过的
+        方案也不会被无谓打乱。
+        """
+        assignment = dict(self._base)
+        pool = [sid for sid in self._free_sids if sid not in assignment.values()]
+        leftover: List[Coord] = []
+        for coord in self._movable:
+            sid = initial.get(make_key(coord), "")
+            if sid and sid in pool:
+                pool.remove(sid)
+                assignment[make_key(coord)] = sid
+            else:
+                leftover.append(coord)
+        for coord, sid in zip(leftover, pool):
             assignment[make_key(coord)] = sid
         return assignment
 

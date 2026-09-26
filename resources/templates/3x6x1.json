@@ -1,0 +1,10 @@
+{
+  "name": "三组单列：3 组 × 6 行 × 1 列",
+  "description": "三列各自独立（单列单座），适合小班或分组讨论",
+  "groups": 3,
+  "rows": 6,
+  "cols": 1,
+  "podium_side": "top",
+  "card_size": "medium",
+  "gap_after": 2
+}

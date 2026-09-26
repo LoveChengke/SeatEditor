@@ -11,6 +11,19 @@
   `seat_size()` / `aisle_width()` / `PANEL_STUDENT_WIDTH` 等常量，不要硬编码十六进制色。
 * 控件需要白底卡片时设置 `objectName`：`Panel` / `SidePanel` / `PanelTitle` / `Hint` /
   `Primary`（主按钮）/ `Danger` / `Ghost` / `HLine`，全局 QSS 已定义。
+* 低频 / 高级选项用 `common.CollapsibleSection`（`app/ui/common.py`）包起来，
+  **默认收起**；区块标题的 `objectName` 是 `SectionToggle`。界面上只留主流程控件。
+* 文案规则：短句 + 步骤化（`1 … → 2 … → 3 …`），不写长段落；按钮文字用动词开头。
+* 尺寸规则：主窗口用 `MainWindow._fit_window_to_screen()`（按 `availableGeometry()`
+  收口）并在 `main.py` 里 `showMaximized()` 启动；对话框构造完调一次
+  `common.fit_to_screen(self)`。**任何菜单的 `sizeHint().height()` 都要小于屏幕
+  可用高度**——一屏放不下的菜单在高 DPI 下会直接顶出屏幕（规则菜单因此拆成
+  硬约束 / 软约束两个子菜单）。
+* 主题是**深色**（近黑底 + 亮蓝强调色）：启动时由 `theme.apply_dark_theme(app)`
+  统一装调色板、QSS 与字体，不要在各处再调 `setStyleSheet` / `setPalette`。
+  QSS 里的图片路径写占位符 `@ASSET_DIR@`（`app/ui/__init__.py:load_stylesheet`
+  会替换成 `app/ui/style/assets/` 的绝对路径）；动作图标放 `resources/icons/*.svg`
+  （`config.ICONS_DIR`），通过 `QAction.setIcon` 使用。
 * 座位坐标类型是三元组 `(group, row, col)`（下文写作 `Coord`）；
   `app/utils/seat_key.py` 提供 `make_key` / `parse_key`。
 * 项目状态在 `app.models.project.Project` 上；通过 `project.subscribe(cb)` 监听变更，
@@ -82,12 +95,29 @@ class StudentTableModel(QAbstractTableModel):
     def student_at(self, row: int): ...                # -> Student | None
     def refresh(self) -> None: ...
     def sort(self, column: int, order) -> None: ...    # 支持点击列头排序
+    def flags(self, index): ...                        # 必须含 ItemIsDragEnabled
 COLUMNS = ["学号", "姓名", "性别", "标签", "数值属性", "已分配座位"]
 
 class StudentTableView(QTableView):
     """支持多选、拖拽（mime: application/x-student，内容为 sid）、右键菜单。"""
     students_dropped = pyqtSignal(list)   # 拖出时不需要，仅用于内部
+    seat_drop_requested = pyqtSignal(str) # 把座位上的学生拖回名单：座位 key（取消入座）
 ```
+
+**拖拽的两个坑**（都踩过，改的时候别退回去）：
+
+* `flags()` 不返回 `Qt.ItemFlag.ItemIsDragEnabled` 时，`QAbstractItemView` 根本不会
+  调用 `startDrag()`——表现是「按住名字拖半天没反应」，而且没有任何报错。
+* `startDrag()` 里只能抓**被拖的那几行**（`StudentTableView._drag_pixmap()`）；
+  抓 `viewport().rect()` 会让拖拽残影变成一整块半透明表格，看着像花屏。
+
+QSS 上 `QTableView::item:selected` 必须写在 `QTableView::item:hover` **后面**
+（同权重后写的赢），否则鼠标停在已选中的格子上时那一格会掉回悬停底色，
+整行高亮像被挖了个洞；`QListWidget::item:*` 等同理。
+
+带下拉箭头的按钮要注意右侧留白：`QToolButton[popupMode="1"]`（MenuButtonPopup）
+与 `[popupMode="2"]`（InstantPopup，标签筛选 / 添加规则用的就是它）都要给
+`padding-right`，否则箭头会压在文字上。
 
 ### `app/ui/widgets/tag_chip.py`
 ```python
@@ -135,9 +165,11 @@ class TagFlow(QWidget):
   座位下拉用「第 N 组 第 M 排 第 K 列」，数据为 `"g-r-c"`；
   「新增」时先用 `make_rule(kind)` 造默认规则；校验用 `rule.validate()`。
 * `LayoutEditorDialog`：左侧参数面板（组数、每组的行/列/组名/组间距、上下移动/删除、
-  「添加分组」）+ 右侧实时预览（用 `SeatGridView` 或简化的 `QGridLayout` 均可）；
-  顶部快速模板下拉取自 `layout.LAYOUT_TEMPLATES`；
-  另有讲台方向、座位卡片尺寸、是否显示组标题；
+  「添加分组」，以及「＋/− 一排 / 一列」的步进按钮）+ 右侧实时预览
+  （用 `SeatGridView` 或简化的 `QGridLayout` 均可）；
+  顶部快速模板下拉取自 `layout.LAYOUT_TEMPLATES`（含单排 / 单列）；
+  参数区上方用一句话说明当前形状（`单排：1 排 × 8 列，共 8 个座位`）；
+  讲台方向常驻，座位卡片尺寸与显示组标题放进「高级选项」折叠区；
   用 `QSpinBox` 的 range 限制在 `layout.MIN_ROWS..MAX_ROWS` 之类常量内。
 
 ## 3. 面板（交给子智能体 B 实现）
@@ -162,8 +194,16 @@ class StudentPanel(QWidget):
     def clear_selection(self) -> None: ...
 ```
 内含：搜索框（实时过滤）、标签筛选下拉（多选，交集/并集切换）、性别与「已分配/未分配」
-筛选、`StudentTableView`、底部按钮（导入 Excel / 添加 / 编辑 / 删除 / 批量标签 / 导出名单 /
-下载导入模板）与人数统计标签。表格必须支持把学生拖到座位表（mime `application/x-student`）。
+筛选、`StudentTableView`、人数统计标签，以及底部按钮
+**导入 Excel 名单（主）/ 添加 / 编辑 / 删除 / 批量标签 / 更多名单操作**——
+粘贴文本导入、导出名单、下载模板都属于低频入口，收进「更多名单操作」菜单，
+不再各占一个按钮（同一功能在「文件」菜单里也有一份）。
+表格必须支持把学生拖到座位表（mime `application/x-student`）。
+表格与面板本身都要接住 `application/x-seat` 的拖放（从座位拖回名单 = 取消入座），
+经 `clear_seat_requested(seat_key)` 交给主窗口处理——面板照旧不直接改项目。
+「更多名单操作」是 **`QPushButton#MenuButton`**（不再是 QToolButton）：
+这样才能和上面的按钮共用同一套 QSS，高度一致；箭头位置由
+`QPushButton#MenuButton::menu-indicator` 单独给。
 
 ### `panels/rule_panel.py`
 ```python
@@ -173,7 +213,9 @@ class RulePanel(QWidget):
     def refresh(self) -> None: ...
 ```
 内含：硬约束 / 软约束两个分组列表（`QListWidget`，每项带勾选框与「人话描述」），
-工具栏「添加规则」（`QMenu` 按 `HARD_KINDS` / `SOFT_KINDS` 分组）、「编辑」、「删除」、
+工具栏「添加规则」（`QMenu`：第一项是 `自定义规则（向导）…`，其余 27 种规则按
+`HARD_KINDS` / `SOFT_KINDS` 拆成 `按类型添加：硬约束…` / `按类型添加：软约束…`
+两个子菜单——单列 27 条会顶出屏幕）、「编辑」、「删除」、
 「上移/下移」（可选），软约束项显示权重。编辑走 `RuleEditDialog`，确认后
 调用 `project.add_rule` / `project.remove_rule` / 直接改 `rule.params` 后 `project.notify("rules")`。
 
@@ -192,9 +234,9 @@ class SelectionPanel(QWidget):
     def set_current_seats(self, seats: set) -> None: ...   # 来自座位表的当前选区
 ```
 内含：选区列表（名称 + 座位数 + 颜色块）、按钮「用当前选中座位新建选区」
-（弹 `QInputDialog` 取名字，发 `selection_created`）、「应用/高亮」、「重命名」、「删除」、
-批量操作按钮（清空 / 设为空置 / 批量分配）、以及常用快捷选区生成
-（按分组 / 按行范围 / 按列范围 → 发 `selection_created`）。
+（弹 `QInputDialog` 取名字，发 `selection_created`）、「应用/高亮」、「重命名」、「删除」；
+批量操作（清空 / 设为空置 / 批量分配）与快捷选区（按分组 / 按行范围 / 按列范围 →
+发 `selection_created`）分别放进两个 `CollapsibleSection`，**默认收起**。
 
 ### `panels/rotation_panel.py`
 ```python
@@ -209,12 +251,16 @@ class RotationPanel(QWidget):
 （选区多选、Δ排、Δ列）、「预览」按钮（用 `RotationService` 生成 `RotationPlan`）、
 「应用轮换」按钮、历史周列表（第 N 周 + 回退按钮）、以及 `plan.warnings` 的提示区。
 `RotationService` 用法见 `app/services/rotation_service.py`。
+面板顶部要写一句「进阶功能」的说明，让只想排一次座的老师知道这页可以不管。
 
 ## 4. 主窗口（由主智能体实现）
 
 `app/ui/main_window.py` 的 `MainWindow(QMainWindow)` 负责：
 菜单栏 / 工具栏 / 三个 Dock（左：学生面板；右：规则面板 + 选区 + 轮换 Tab）/
 中央 `SeatGridView` / 状态栏；文件（新建、打开、保存、另存为、最近文件、导出、
-自动保存与崩溃恢复）、编辑（撤销 Ctrl+Z / 重做 Ctrl+Y）、视图（显示学号、组标题、
-卡片尺寸、选区高亮）、排位（一键排位、换一批、锁定选中座位再排位、冲突报告）、
-轮换、帮助（快捷键说明、关于）。
+自动保存与崩溃恢复）、编辑（撤销 `Ctrl+Z` / 重做 `Ctrl+Y`，另给 `Ctrl+Shift+Z` 兜底）、
+视图（显示学号、组标题、卡片尺寸、选区高亮）、排位（一键排位、换一批、锁定选中座位再排位、
+冲突报告）、轮换、帮助（快捷键说明、关于）。
+
+工具栏**只放一条主线**：打开 → 保存 → 教室布局 → 导入名单 → 一键排位 → 导出座位表 →
+撤销 / 重做；新建、粘贴导入、名单模板、排位报告等低频入口留在菜单里。

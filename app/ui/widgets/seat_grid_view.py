@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import (
 from ...models.project import EV_ASSIGNMENT, EV_LAYOUT, EV_STUDENTS, EV_TAGS, Project
 from ...utils.seat_key import make_key, try_parse_key
 from ..style.theme import (
-    FONT_PANEL_TITLE,
     GRID_MARGIN,
     GRID_SPACING,
     PODIUM_GAP,
@@ -55,10 +54,10 @@ class GroupBox(QWidget):
     def __init__(self, name: str, show_title: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.title_label = QLabel(name, self)
+        # 颜色交给 QSS（QLabel#GroupTitle）：导出 PNG 时要临时换成浅色，
+        # 内联样式没法被导出时的样式表覆盖。
+        self.title_label.setObjectName("GroupTitle")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title_label.setStyleSheet(
-            "color: %s; font-size: %dpx; font-weight: 500;" % (Color.TEXT_SECONDARY, FONT_PANEL_TITLE)
-        )
         self.title_label.setVisible(show_title)
         self.grid = None
         self.layout_box = QVBoxLayout(self)
@@ -113,8 +112,9 @@ class SeatGridView(QWidget):
         self._root.setSpacing(0)
 
         self._rubber = QRubberBand(QRubberBand.Shape.Rectangle, self._canvas)
+        # rgba 里的 61,155,245 就是 Color.PRIMARY (#3D9BF5)，QSS 之外无法引用常量
         self._rubber.setStyleSheet(
-            "QRubberBand { border: 1px dashed %s; background: rgba(47,107,255,40); }" % Color.PRIMARY
+            "QRubberBand { border: 1px dashed %s; background: rgba(61,155,245,45); }" % Color.PRIMARY
         )
 
         self._podium_top: Optional[PodiumWidget] = None

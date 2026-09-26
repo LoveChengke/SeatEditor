@@ -12,17 +12,19 @@ from PyQt6.QtCore import (
     QAbstractTableModel,
     QModelIndex,
     QPoint,
+    QRect,
     Qt,
     QTimer,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QDrag
+from PyQt6.QtGui import QColor, QCursor, QDrag
 from PyQt6.QtWidgets import QAbstractItemView, QHeaderView, QTableView
 
 from ...models.project import EV_ASSIGNMENT, EV_STUDENTS, EV_TAGS, Project
 from ...models.student import Student
-from ..dnd import student_mime
+from ..dnd import MIME_SEAT, MIME_STUDENT, decode_seat, student_mime
 from ..style.theme import Color
+from ...utils.seat_key import make_key
 
 COLUMNS = ["学号", "姓名", "性别", "标签", "数值属性", "已分配座位"]
 COL_SID, COL_NAME, COL_GENDER, COL_TAGS, COL_ATTRS, COL_SEAT = range(6)
@@ -106,6 +108,18 @@ class StudentTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole and section == COL_SEAT:
             return "该学生当前所在的座位"
         return None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:  # noqa: N802 - Qt 命名
+        """必须显式带上 ``ItemIsDragEnabled``，否则视图根本不会发起拖拽。
+
+        默认实现只有 Enabled | Selectable，于是「从名单拖学生到座位」一直没反应。
+        """
+        if not index.isValid():
+            return Qt.ItemFlag.NoItemFlags
+        return (Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsDragEnabled
+                | Qt.ItemFlag.ItemNeverHasChildren)
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):  # noqa: N802
         if not index.isValid():
@@ -205,6 +219,7 @@ class StudentTableView(QTableView):
 
     context_menu_requested = pyqtSignal(QPoint)
     double_clicked = pyqtSignal(str)
+    seat_drop_requested = pyqtSignal(str)      # 座位 key：把该座位的学生拖回名单（取消入座）
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -216,6 +231,7 @@ class StudentTableView(QTableView):
         self.setWordWrap(False)
         self.setShowGrid(False)
         self.setDragEnabled(True)
+        self.setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
         self.setDefaultDropAction(Qt.DropAction.CopyAction)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -245,8 +261,9 @@ class StudentTableView(QTableView):
             (COL_SEAT, QHeaderView.ResizeMode.Stretch),
         ):
             header.setSectionResizeMode(column, mode)
-        self.setColumnWidth(COL_SID, 78)
-        self.setColumnWidth(COL_NAME, 76)
+        # 学号列要放下 8 位学号（如 20240001），窄一点都不行——截成「20240…」老师没法核对
+        self.setColumnWidth(COL_SID, 86)
+        self.setColumnWidth(COL_NAME, 74)
         self.setColumnWidth(COL_TAGS, 110)
         self.setColumnWidth(COL_ATTRS, 120)
 
@@ -255,11 +272,8 @@ class StudentTableView(QTableView):
         model = self.model()
         if model is None:
             return []
-        rows = sorted({index.row() for index in self.selectionModel().selectedRows()})
-        if not rows:
-            rows = sorted({index.row() for index in self.selectionModel().selectedIndexes()})
         result: List[str] = []
-        for row in rows:
+        for row in self._selected_rows():
             student = model.student_at(row) if hasattr(model, "student_at") else None
             if student is not None:
                 result.append(student.sid)
@@ -271,16 +285,77 @@ class StudentTableView(QTableView):
             return
         drag = QDrag(self)
         drag.setMimeData(student_mime(sids))
-        pixmap = self.viewport().grab(self.viewport().rect())
-        drag.setPixmap(pixmap)
-        drag.setHotSpot(QPoint(12, 12))
+        pixmap, offset = self._drag_pixmap()
+        if pixmap is not None and not pixmap.isNull():
+            drag.setPixmap(pixmap)
+            # 热区取「鼠标落在这一小块里的相对位置」，拖起来才不会跳。
+            # 原来抓的是整个视口，跟手的就是一大块半透明残影，看着像花屏。
+            local = self.viewport().mapFromGlobal(QCursor.pos()) - offset
+            drag.setHotSpot(QPoint(
+                max(0, min(pixmap.width(), local.x())),
+                max(0, min(pixmap.height(), local.y())),
+            ))
         drag.exec(Qt.DropAction.CopyAction)
+
+    def _drag_pixmap(self):
+        """只抓被拖的那几行，返回 ``(pixmap, 在视口中的左上角)``。"""
+        model = self.model()
+        if model is None:
+            return None, QPoint()
+        rows = self._selected_rows()
+        if not rows:
+            return None, QPoint()
+        top = self.visualRect(model.index(rows[0], 0))
+        bottom = self.visualRect(model.index(rows[-1], 0))
+        if top.isEmpty() or bottom.isEmpty():
+            return None, QPoint()
+        rect = QRect(0, top.top(), self.viewport().width(),
+                     bottom.bottom() - top.top() + 1)
+        rect = rect.intersected(self.viewport().rect())
+        if rect.isEmpty():
+            return None, QPoint()
+        return self.viewport().grab(rect), rect.topLeft()
+
+    def _selected_rows(self) -> List[int]:
+        selection = self.selectionModel()
+        if selection is None:
+            return []
+        rows = {index.row() for index in selection.selectedRows()}
+        if not rows:
+            rows = {index.row() for index in selection.selectedIndexes()}
+        return sorted(rows)
 
     def _on_double_clicked(self, index: QModelIndex) -> None:
         model = self.model()
         student = model.student_at(index.row()) if hasattr(model, "student_at") else None
         if student is not None:
             self.double_clicked.emit(student.sid)
+
+    # 把座位上的学生拖回名单 = 取消入座
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if self._is_seat_drag(event):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if self._is_seat_drag(event):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        data = decode_seat(event.mimeData())
+        if data.get("seat") is not None:
+            self.seat_drop_requested.emit(make_key(data["seat"]))
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+    @staticmethod
+    def _is_seat_drag(event) -> bool:
+        mime = event.mimeData() if hasattr(event, "mimeData") else None
+        return mime is not None and mime.hasFormat(MIME_SEAT)
 
     # 便捷
     def select_sid(self, sid: str) -> None:

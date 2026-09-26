@@ -53,8 +53,11 @@ class TagChip(QFrame):
         return self._color.name()
 
     def _text_color(self) -> str:
-        # 浅色底用深字，深色底用白字
-        return "#FFFFFF" if self._color.lightness() < 150 else "#1F2430"
+        # 深色底：胶囊内部是同色系的暗色底，字用同色系亮色最耐看也最可读
+        color = QColor(self._color)
+        if color.lightness() < 130:
+            color = color.lighter(155)
+        return color.name()
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt 命名
         painter = QPainter(self)
@@ -63,9 +66,9 @@ class TagChip(QFrame):
         path = QPainterPath()
         path.addRoundedRect(float(rect.x()), float(rect.y()), float(rect.width()), float(rect.height()), 8.0, 8.0)
         fill = QColor(self._color)
-        fill.setAlpha(38)
+        fill.setAlpha(48)
         painter.fillPath(path, fill)
-        painter.setPen(self._color)
+        painter.setPen(QColor(self._color).lighter(115))
         painter.drawPath(path)
         painter.end()
 

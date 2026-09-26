@@ -1,0 +1,10 @@
+{
+  "name": "单列：1 组 × 8 行 × 1 列",
+  "description": "只有一列座位（靠墙单列 / 走道单列），可按排微调",
+  "groups": 1,
+  "rows": 8,
+  "cols": 1,
+  "podium_side": "top",
+  "card_size": "medium",
+  "gap_after": 1
+}

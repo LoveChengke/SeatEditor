@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from ..common import hline
+from ..common import fit_to_screen, hline
 from ...models.rule import HARD, RULE_SPECS, SOFT, Rule, describe_rule, make_rule
 from ...utils.natural_sort import natural_key
 
@@ -65,6 +65,7 @@ class RuleWizardDialog(QDialog):
         self._rebuild()
         self.adjustSize()
         self.setMinimumSize(max(540, self.width()), self.height())
+        fit_to_screen(self)
 
     # 界面
     def _build_ui(self) -> None:

@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..common import hline
+from ..common import fit_to_screen, hline
 from ...models.student import Student
 
 TAG_SPLIT = re.compile(r"[,，;；、|/\s]+")
@@ -47,6 +47,7 @@ class StudentEditDialog(QDialog):
         self._build_ui()
         self._load()
         self.adjustSize()
+        fit_to_screen(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

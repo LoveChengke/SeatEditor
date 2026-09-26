@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QRadioButton, QVBoxLayout, QWidget,
 )
 
-from ..common import hline
+from ..common import CollapsibleSection, fit_to_screen, hline
 from ... import config
 from ...storage.excel_io import ExportOptions
 
@@ -38,6 +38,7 @@ class ExportDialog(QDialog):
         self._build_ui()
         self._on_mode_changed()
         self.adjustSize()
+        fit_to_screen(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -46,7 +47,7 @@ class ExportDialog(QDialog):
         title = QLabel("导出座位表")
         title.setObjectName("PanelTitle")
         root.addWidget(title)
-        hint = QLabel("导出前请确认座位表已排位完成；空座位会以空白单元格呈现。")
+        hint = QLabel("选格式 → 选保存位置。空座位会显示为空白。")
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -67,13 +68,18 @@ class ExportDialog(QDialog):
         excel_layout = QVBoxLayout(self._excel_box)
         self._sid_check = QCheckBox("包含学号")
         self._group_check = QCheckBox("包含组标题")
-        self._roster_check = QCheckBox("附加「名单」页")
-        self._rules_check = QCheckBox("附加「规则说明」页")
         self._podium_check = QCheckBox("显示讲台")
-        for widget in (self._sid_check, self._group_check, self._roster_check,
-                       self._rules_check, self._podium_check):
+        for widget in (self._sid_check, self._group_check, self._podium_check):
             widget.setChecked(True)
             excel_layout.addWidget(widget)
+        # 附加页属于低频选项，默认折叠
+        self._extra_section = CollapsibleSection("附加表格（可选）")
+        self._roster_check = QCheckBox("附加「名单」页")
+        self._rules_check = QCheckBox("附加「规则说明」页")
+        for widget in (self._roster_check, self._rules_check):
+            widget.setChecked(True)
+            self._extra_section.body_layout.addWidget(widget)
+        excel_layout.addWidget(self._extra_section)
         root.addWidget(self._excel_box)
 
         self._png_box = QGroupBox("PNG 选项")

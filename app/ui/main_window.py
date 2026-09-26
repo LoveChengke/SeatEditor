@@ -11,8 +11,8 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from PyQt6.QtCore import QSettings, Qt, QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
+from PyQt6.QtCore import QSettings, QSize, Qt, QTimer
+from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -48,17 +48,26 @@ from ..services.history_service import HistoryService, Snapshot
 from ..services.rotation_service import RotationError, RotationPlan, RotationService
 from ..services.rule_engine import RuleEngine, describe_violations
 from ..services.seat_service import SeatService
-from ..services.student_service import StudentService
+from ..services.student_service import ASSIGN_UNASSIGNED, StudentService
 from ..storage import excel_io
 from ..storage.excel_io import ExportOptions
 from ..storage.project_store import JsonProjectStore, ProjectStoreError
 from ..utils.natural_sort import natural_key
 from ..utils.seat_key import make_key, try_parse_key
 from ..utils.seat_key import Seat as Coord
-from .style.theme import PANEL_RULE_WIDTH, PANEL_STUDENT_WIDTH
+from .style.theme import (
+    PANEL_RULE_WIDTH,
+    PANEL_STUDENT_WIDTH,
+    PRINT_CANVAS_QSS,
+    set_print_mode,
+)
 from .widgets.seat_grid_view import SeatGridView
 
 MAX_RECENT = 8
+
+# 主窗口尺寸：优先用首选尺寸，屏幕放不下就退到可用区域以内
+PREFERRED_WINDOW_SIZE = (1440, 900)
+MIN_WINDOW_SIZE = (1100, 720)
 
 
 class MainWindow(QMainWindow):
@@ -81,8 +90,7 @@ class MainWindow(QMainWindow):
         self._syncing_view = False
 
         self.setWindowTitle(config.APP_NAME)
-        self.setMinimumSize(1100, 720)
-        self.resize(1440, 900)
+        self._fit_window_to_screen()
 
         self._build_central()
         self._build_panels()
@@ -106,6 +114,22 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(200, self._maybe_recover)
         QTimer.singleShot(400, self._maybe_welcome)
 
+    def _fit_window_to_screen(self) -> None:
+        """按屏幕可用区域定尺寸：高 DPI（150%/200%）或小屏笔记本上不能比屏幕还大。"""
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            self.setMinimumSize(*MIN_WINDOW_SIZE)
+            self.resize(*PREFERRED_WINDOW_SIZE)
+            return
+        available = screen.availableGeometry()
+        min_width = min(MIN_WINDOW_SIZE[0], max(720, available.width() - 40))
+        min_height = min(MIN_WINDOW_SIZE[1], max(520, available.height() - 80))
+        self.setMinimumSize(min_width, min_height)
+        self.resize(
+            max(min_width, min(PREFERRED_WINDOW_SIZE[0], available.width() - 20)),
+            max(min_height, min(PREFERRED_WINDOW_SIZE[1], available.height() - 40)),
+        )
+
     # 界面搭建
     def _build_central(self) -> None:
         self.grid = SeatGridView(self)
@@ -128,7 +152,9 @@ class MainWindow(QMainWindow):
         self.student_dock = QDockWidget("学生名单", self)
         self.student_dock.setObjectName("StudentDock")
         self.student_dock.setWidget(self.student_panel)
-        self.student_dock.setMinimumWidth(PANEL_STUDENT_WIDTH - 40)
+        # 左边栏不能压太窄：名单的「学号 / 姓名 / 性别 / 标签」四列需要约 320px，
+        # 再窄就会把标签列切成一个字，看着像界面坏了（内容其实还在，可横向滚动）。
+        self.student_dock.setMinimumWidth(PANEL_STUDENT_WIDTH + 20)
         self.student_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable
             | QDockWidget.DockWidgetFeature.DockWidgetClosable
@@ -142,6 +168,7 @@ class MainWindow(QMainWindow):
         self.student_panel.delete_requested.connect(self.delete_students)
         self.student_panel.tag_requested.connect(self.batch_tag)
         self.student_panel.export_requested.connect(self.export_roster)
+        self.student_panel.clear_seat_requested.connect(self.unassign_seat)
         if hasattr(self.student_panel, "template_requested"):
             self.student_panel.template_requested.connect(self.save_roster_template)
         if hasattr(self.student_panel, "students_imported"):
@@ -158,6 +185,9 @@ class MainWindow(QMainWindow):
         self.right_tabs.addTab(self.rule_panel, "规则")
         self.right_tabs.addTab(self.selection_panel, "选区")
         self.right_tabs.addTab(self.rotation_panel, "轮换")
+        self.right_tabs.setTabToolTip(0, "排位规则：谁要坐哪里（先看这一页）")
+        self.right_tabs.setTabToolTip(1, "选区：把若干座位存成一组，供规则 / 批量操作用")
+        self.right_tabs.setTabToolTip(2, "轮换：按周整体换座（可选）")
 
         self.right_dock = QDockWidget("规则与选区", self)
         self.right_dock.setObjectName("RightDock")
@@ -185,8 +215,16 @@ class MainWindow(QMainWindow):
         self.rotation_panel.rollback_requested.connect(self._on_rotation_rollback)
 
     def _build_actions(self) -> None:
-        def action(text: str, shortcut: str = "", slot=None, tip: str = "", checkable: bool = False) -> QAction:
+        def icon(name: str) -> QIcon:
+            """取 resources/icons 下的线性图标；文件缺失时返回空图标。"""
+            path = config.ICONS_DIR / ("%s.svg" % name)
+            return QIcon(str(path)) if path.exists() else QIcon()
+
+        def action(text: str, shortcut: str = "", slot=None, tip: str = "",
+                   checkable: bool = False, icon_name: str = "") -> QAction:
             act = QAction(text, self)
+            if icon_name:
+                act.setIcon(icon(icon_name))
             if shortcut:
                 act.setShortcut(QKeySequence(shortcut))
             if tip:
@@ -198,34 +236,37 @@ class MainWindow(QMainWindow):
                 act.triggered.connect(slot)
             return act
 
-        self.act_new = action("新建项目", "Ctrl+N", self.new_project, "清空当前项目，重新开始")
-        self.act_open = action("打开项目…", "Ctrl+O", self.open_project, "打开 .seatproj 项目文件")
-        self.act_save = action("保存", "Ctrl+S", self.save_project, "保存到当前项目文件")
-        self.act_save_as = action("另存为…", "Ctrl+Shift+S", self.save_project_as, "保存到新的项目文件")
-        self.act_import = action("导入学生名单…", "Ctrl+I", self.import_excel, "从 Excel 导入名单")
-        self.act_import_text = action("粘贴文本导入名单…", "", self.import_text, "从剪贴板/文本框批量粘贴「学号 姓名」")
+        self.act_new = action("新建项目", "Ctrl+N", self.new_project, "清空当前项目，重新开始", icon_name="new")
+        self.act_open = action("打开项目…", "Ctrl+O", self.open_project, "打开 .seatproj 项目文件", icon_name="open")
+        self.act_save = action("保存", "Ctrl+S", self.save_project, "保存到当前项目文件", icon_name="save")
+        self.act_save_as = action("另存为…", "Ctrl+Shift+S", self.save_project_as, "保存到新的项目文件", icon_name="save")
+        self.act_import = action("导入学生名单…", "Ctrl+I", self.import_excel, "从 Excel 导入名单", icon_name="import")
+        self.act_import_text = action("粘贴文本导入名单…", "", self.import_text, "从剪贴板/文本框批量粘贴「学号 姓名」", icon_name="import")
         self.act_roster_template = action(
             "下载名单导入模板…", "", self.save_roster_template,
             "生成 Excel 名单模板（含填写说明与示例），填好后可直接导入",
         )
-        self.act_export_excel = action("导出座位表 (Excel)…", "Ctrl+E", self.export_seat_table, "导出带讲台与过道的座位表")
-        self.act_export_png = action("导出座位表 (PNG)…", "Ctrl+Shift+E", self.export_png, "导出座位表图片")
-        self.act_export_roster = action("导出学生名单…", "", self.export_roster, "导出当前名单（含标签与数值属性）")
+        self.act_export_excel = action("导出座位表 (Excel)…", "Ctrl+E", self.export_seat_table, "导出带讲台与过道的座位表", icon_name="export")
+        self.act_export_png = action("导出座位表 (PNG)…", "Ctrl+Shift+E", self.export_png, "导出座位表图片", icon_name="export")
+        self.act_export_roster = action("导出学生名单…", "", self.export_roster, "导出当前名单（含标签与数值属性）", icon_name="export")
         self.act_quit = action("退出", "Ctrl+Q", self.close, "退出程序")
 
-        self.act_undo = action("撤销", "Ctrl+Z", self.undo, "撤销上一步操作")
-        self.act_redo = action("重做", "Ctrl+Y", self.redo, "重做被撤销的操作")
+        self.act_undo = action("撤销", "Ctrl+Z", self.undo, "撤销上一步操作（Ctrl+Z）", icon_name="undo")
+        self.act_redo = action("重做", "Ctrl+Y", self.redo, "重做被撤销的操作（Ctrl+Y / Ctrl+Shift+Z）", icon_name="redo")
+        # 重做给两个快捷键：Ctrl+Y 是 Windows 习惯，但常被输入法 / 截图工具等
+        # 全局热键吞掉；Ctrl+Shift+Z 是浏览器与 macOS 的习惯，留一条后路。
+        self.act_redo.setShortcuts([QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")])
         self.act_clear_seats = action("清空选中座位", "Delete", self._clear_selected, "把选中的学生移回未分配池")
         self.act_toggle_disabled = action("设为 / 取消空置", "Ctrl+D", self._toggle_selected_disabled, "空置座位不参与排位")
         self.act_select_all = action("全选座位", "Ctrl+A", self._select_all_seats, "选中全部座位")
-        self.act_assign_pending = action("把选中学生放入第一个空位", "", self._assign_pending_auto, "按顺序自动填空位")
+        self.act_assign_pending = action("把选中学生放入空座位", "", self._assign_pending_auto, "把名单里选中的学生依次放进空座位")
         self.act_lock_seats = action("锁定选中座位", "Ctrl+L", self._lock_selected, "排位时保持这些座位不变")
         self.act_unlock_seats = action("解除全部锁定", "Ctrl+Shift+L", self._unlock_seats, "取消所有座位锁定")
 
-        self.act_layout = action("教室布局…", "Ctrl+B", self.edit_layout, "配置分组、行列、组间距与讲台方向")
-        self.act_solve = action("一键排位", "F5", self.solve, "按规则自动排座位")
-        self.act_solve_again = action("换一批", "Ctrl+R", self.solve, "重新搜索另一个方案")
-        self.act_report = action("查看排位报告", "", self.show_report, "查看硬约束满足情况与软约束得分")
+        self.act_layout = action("教室布局…", "Ctrl+B", self.edit_layout, "配置分组、行列、组间距与讲台方向", icon_name="layout")
+        self.act_solve = action("一键排位", "F5", self.solve, "按规则自动排座位", icon_name="solve")
+        self.act_solve_again = action("换一批", "Ctrl+R", self.solve, "重新搜索另一个方案", icon_name="solve")
+        self.act_report = action("查看排位报告", "", self.show_report, "查看硬约束满足情况与软约束得分", icon_name="report")
         self.act_clear_all = action("清空全部座位", "", self.clear_all_seats, "把所有学生移回未分配池")
 
         self.act_tags = action("标签管理…", "Ctrl+T", self.manage_tags, "新增 / 重命名 / 删除标签与配色")
@@ -260,6 +301,8 @@ class MainWindow(QMainWindow):
 
     def _build_menus(self) -> None:
         bar = self.menuBar()
+        # 自绘菜单栏（Windows 原生菜单栏不吃 QSS，深色主题下会突兀）
+        bar.setNativeMenuBar(False)
         menu_file = bar.addMenu("文件(&F)")
         menu_file.addAction(self.act_new)
         menu_file.addAction(self.act_open)
@@ -314,26 +357,37 @@ class MainWindow(QMainWindow):
         menu_help = bar.addMenu("帮助(&H)")
         menu_help.addAction(self.act_help)
         menu_help.addAction(self.act_about)
+        self._install_header(bar)
+
+    def _install_header(self, bar) -> None:
+        """菜单栏两端放应用名与版本号，对应设计稿顶部的标题栏（纯装饰）。"""
+        brand = QLabel(config.APP_NAME, self)
+        brand.setObjectName("Brand")
+        bar.setCornerWidget(brand, Qt.Corner.TopLeftCorner)
+        version = QLabel("v%s" % config.VERSION, self)
+        version.setObjectName("BrandVersion")
+        bar.setCornerWidget(version, Qt.Corner.TopRightCorner)
 
     def _build_toolbar(self) -> None:
         bar = QToolBar("主工具栏", self)
         bar.setObjectName("MainToolBar")
         bar.setMovable(False)
-        bar.setIconSize(bar.iconSize())
+        bar.setIconSize(QSize(16, 16))
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(bar)
-        bar.addAction(self.act_new)
+        # 工具栏只放一条能走完的主线：布局 → 名单 → 排位 → 导出，
+        # 其余（新建 / 粘贴导入 / 名单模板 / 排位报告…）都在菜单里，避免一屏入口。
         bar.addAction(self.act_open)
         bar.addAction(self.act_save)
         bar.addSeparator()
+        bar.addAction(self.act_layout)
         bar.addAction(self.act_import)
+        bar.addSeparator()
+        bar.addAction(self.act_solve)
         bar.addAction(self.act_export_excel)
         bar.addSeparator()
         bar.addAction(self.act_undo)
         bar.addAction(self.act_redo)
-        bar.addSeparator()
-        bar.addAction(self.act_layout)
-        bar.addAction(self.act_solve)
-        bar.addAction(self.act_report)
         self.toolbar = bar
 
     def _build_statusbar(self) -> None:
@@ -409,8 +463,14 @@ class MainWindow(QMainWindow):
         can_redo = self.history.can_redo
         self.act_undo.setEnabled(can_undo)
         self.act_redo.setEnabled(can_redo)
-        self.act_undo.setToolTip("撤销：%s" % self.history.undo_label() if can_undo else "没有可撤销的操作")
-        self.act_redo.setToolTip("重做：%s" % self.history.redo_label() if can_redo else "没有可重做的操作")
+        self.act_undo.setToolTip(
+            ("撤销（Ctrl+Z）：%s" % self.history.undo_label()) if can_undo
+            else "没有可撤销的操作（Ctrl+Z）"
+        )
+        self.act_redo.setToolTip(
+            ("重做（Ctrl+Y / Ctrl+Shift+Z）：%s" % self.history.redo_label()) if can_redo
+            else "没有可重做的操作（Ctrl+Y / Ctrl+Shift+Z）"
+        )
 
     # 历史
     def _snapshot_layout(self) -> Dict[str, Any]:
@@ -421,6 +481,10 @@ class MainWindow(QMainWindow):
         self._update_history_actions()
 
     def _restore(self, snapshot: Snapshot) -> None:
+        # 撤销 / 重做都会重建座位表，重建会销毁当前聚焦的座位控件；若不还回去，
+        # 主窗口可能连「当前窗口」都不是，于是紧接着按 Ctrl+Y 这类窗口级快捷键
+        # 全都发不进来——这正是「重做键不生效」的现场。这里显式恢复焦点与激活。
+        focused = self.focusWidget()
         self._suppress_events = True
         try:
             if snapshot.layout_snapshot:
@@ -437,6 +501,17 @@ class MainWindow(QMainWindow):
         self._update_status()
         self.student_panel.refresh()
         self.selection_panel.refresh()
+        self._sync_view_actions()
+        try:
+            if focused is not None and focused is not self and focused.isVisible():
+                focused.setFocus()
+            else:
+                self.grid.setFocus()
+        except RuntimeError:
+            # 聚焦的座位控件已在 rebuild 中被销毁
+            self.grid.setFocus()
+        if not self.isActiveWindow():
+            self.activateWindow()
 
     def undo(self) -> None:
         snapshot = self.history.undo(self.project.assignment, self._snapshot_layout())
@@ -517,11 +592,26 @@ class MainWindow(QMainWindow):
         shift = bool(modifiers & int(Qt.KeyboardModifier.ShiftModifier.value))
         if ctrl or shift:
             return
-        if not self._pending_sids:
+        pending = [sid for sid in self._pending_sids if sid]
+        if len(pending) != 1:
             return
-        occupants = [self.project.assignment.get(make_key(seat), "")]
-        if len(self._pending_sids) == 1 and not occupants[0]:
-            self.assign_student(self._pending_sids[0], seat)
+        if self.project.assignment.get(make_key(seat), ""):
+            return                       # 座位有人：换座请直接拖动座位卡片
+        sid = pending[0]
+        seated_at = seat_key_of(self.project.assignment, sid)
+        if seated_at:
+            # 已经入座的学生不再「点一下空座位就挪走」——那样轻轻一点就被挪位太吓人
+            self.toast("%s 已在 %s；拖动座位卡片即可换座" % (
+                self.project.student_name(sid), self._seat_label(seated_at)))
+            return
+        self.assign_student(sid, seat)
+
+    def _seat_label(self, seat_key: str) -> str:
+        coord = try_parse_key(seat_key)
+        if coord is None:
+            return str(seat_key)
+        return "%s 第%d排 第%d列" % (self.project.layout.group_name(coord[0]),
+                                    coord[1] + 1, coord[2] + 1)
 
     def _on_seat_double_clicked(self, seat) -> None:
         sid = self.project.assignment.get(make_key(seat), "")
@@ -534,7 +624,27 @@ class MainWindow(QMainWindow):
         self.swap_seats(source, target)
 
     def _on_student_dropped(self, sid: str, seat) -> None:
-        self.assign_student(sid, seat)
+        if self.assign_student(sid, seat):
+            # 拖完就放掉名单里的高亮：否则这个学生一直是「待入座」状态，
+            # 之后再点任意空座位都会把他挪过去（老师反馈的「点一下就被搬走」）。
+            self._pending_sids = []
+            self.student_panel.clear_selection()
+            if self.student_panel.assign_filter() == ASSIGN_UNASSIGNED:
+                # 「未分配」筛选下入座后该行会被筛掉，这里说清楚，免得像学生丢了
+                self.toast("已入座；当前筛选是「未分配」，该学生已从名单移出", 6000)
+
+    def unassign_seat(self, seat_key: str) -> None:
+        """把座位上的学生拖回名单 = 取消入座（回到未分配池）。"""
+        coord = try_parse_key(seat_key)
+        if coord is None:
+            return
+        sid = self.project.assignment.get(make_key(coord), "")
+        if not sid:
+            self.toast("这个座位本来就是空的")
+            return
+        name = self.project.student_name(sid)
+        if self.clear_seats([coord]):
+            self.toast("已把 %s 移回名单（取消入座）" % name)
 
     def _on_seat_context_menu(self, seat, global_pos) -> None:
         coord = tuple(seat)
@@ -1045,6 +1155,10 @@ class MainWindow(QMainWindow):
             hidden.append(self.act_show_selection)
         self.grid.clear_selection()
         QApplication.processEvents()
+        # 屏幕上用深色，导出的图片要打印，临时切成浅色配色（finally 里还原）
+        previous_style = self.grid.styleSheet()
+        self.grid.setStyleSheet(PRINT_CANVAS_QSS)
+        set_print_mode(True)
         try:
             target = self.export_service.export_png(self.grid, path, scale)
         except ExportError as exc:
@@ -1052,6 +1166,9 @@ class MainWindow(QMainWindow):
             for act in hidden:
                 act.setChecked(True)
             return
+        finally:
+            set_print_mode(False)
+            self.grid.setStyleSheet(previous_style)
         for act in hidden:
             act.setChecked(True)
         self.toast("已导出图片：%s" % target)
@@ -1463,19 +1580,57 @@ class MainWindow(QMainWindow):
         geometry = settings.value(config.SK_GEOMETRY)
         if geometry is not None:
             self.restoreGeometry(geometry)
+            self._clamp_geometry_to_screen()
         state = settings.value(config.SK_STATE)
         if state is not None:
             self.restoreState(state)
         self.act_show_sid.setChecked(settings.value(config.SK_SHOW_SID, True, type=bool))
         self.act_show_selection.setChecked(
             settings.value(config.SK_SHOW_SELECTION, True, type=bool))
-        # 上次的选择只作为新项目的默认值，之后以项目里的布局为准
+        # 座位尺寸 / 组标题属于项目本身（布局编辑器里也在改），打开旧项目时
+        # 必须听项目的——否则教师刚用「单排」模板调好的小号卡片，会被这台机器
+        # 上次留下的偏好覆盖掉。所以只给「全新的空项目」套用偏好。
+        if not self._is_fresh_project():
+            self.grid.set_show_sid(self.act_show_sid.isChecked())
+            return
         size = str(settings.value(config.SK_CARD_SIZE, "", type=str) or "")
         if size in self.act_size:
             self.project.layout.card_size = size
         self.project.layout.show_group_title = settings.value(
             config.SK_SHOW_GROUP_TITLE, self.project.layout.show_group_title, type=bool)
         self.grid.set_show_sid(self.act_show_sid.isChecked())
+
+    def _is_fresh_project(self) -> bool:
+        """还没有任何内容的项目（启动时的默认项目）。"""
+        project = self.project
+        return not (project.students or project.assignment or project.rules
+                    or project.selections or project.history or project.path)
+
+    def _clamp_geometry_to_screen(self) -> None:
+        """把保存下来的窗口尺寸收回屏幕内。
+
+        上次的尺寸可能来自更大 / 已拔掉的显示器，或来自小屏上缩放比变化之前；
+        直接套用会让窗口比屏幕还大、标题栏跑到屏幕外。
+        """
+        if self.isMaximized() or self.isFullScreen():
+            return
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        frame = self.frameGeometry()
+        too_big = (frame.width() > available.width() + 2
+                   or frame.height() > available.height() + 2)
+        outside = not available.intersects(frame)
+        if not (too_big or outside):
+            return
+        width = max(self.minimumWidth(), min(self.width(), available.width() - 20))
+        height = max(self.minimumHeight(), min(self.height(), available.height() - 60))
+        self.resize(width, height)
+        self.move(
+            available.x() + max(0, (available.width() - width) // 2),
+            available.y() + max(0, (available.height() - height) // 3),
+        )
 
     def _save_settings(self) -> None:
         settings = self._settings()
@@ -1519,29 +1674,25 @@ class MainWindow(QMainWindow):
     def show_help(self) -> None:
         steps = "\n".join(config.WELCOME_STEPS)
         text = (
-            "<b>五分钟上手</b><br><pre style='font-family:inherit;'>%s</pre>"
+            "<b>四步排好一次座位</b><br><pre style='font-family:inherit;'>%s</pre>"
             "<b>常用快捷键</b>"
             "<table cellpadding='3'>"
-            "<tr><td>Ctrl+N / Ctrl+O / Ctrl+S</td><td>新建 / 打开 / 保存项目</td></tr>"
+            "<tr><td>F5</td><td>一键排位（Ctrl+R 换一批）</td></tr>"
+            "<tr><td>Ctrl+B</td><td>教室布局（改行列 / 单排单列）</td></tr>"
             "<tr><td>Ctrl+I</td><td>导入学生名单</td></tr>"
-            "<tr><td>Ctrl+E / Ctrl+Shift+E</td><td>导出 Excel / PNG 座位表</td></tr>"
-            "<tr><td>Ctrl+Z / Ctrl+Y</td><td>撤销 / 重做</td></tr>"
+            "<tr><td>Ctrl+E</td><td>导出 Excel 座位表</td></tr>"
+            "<tr><td>Ctrl+Z / Ctrl+Y</td><td>撤销 / 重做（Ctrl+Shift+Z 亦可）</td></tr>"
             "<tr><td>Delete</td><td>清空选中座位</td></tr>"
-            "<tr><td>Ctrl+D</td><td>设为 / 取消空置</td></tr>"
             "<tr><td>Ctrl+A</td><td>全选座位</td></tr>"
-            "<tr><td>Ctrl+L / Ctrl+Shift+L</td><td>锁定选中座位 / 解除锁定</td></tr>"
-            "<tr><td>Ctrl+B</td><td>教室布局设置</td></tr>"
-            "<tr><td>F5 / Ctrl+R</td><td>一键排位 / 换一批</td></tr>"
-            "<tr><td>F1</td><td>本说明</td></tr>"
+            "<tr><td>Ctrl+N / Ctrl+O / Ctrl+S</td><td>新建 / 打开 / 保存项目</td></tr>"
             "</table>"
             "<b>鼠标操作</b>"
             "<table cellpadding='3'>"
             "<tr><td>在名单里选中学生 → 点击空座位</td><td>学生入座</td></tr>"
-            "<tr><td>从名单拖学生到座位</td><td>学生入座</td></tr>"
             "<tr><td>从座位拖到另一个座位</td><td>两人交换 / 移动到空位</td></tr>"
             "<tr><td>在空白处拖拽框选 / Ctrl+点击</td><td>选择多个座位</td></tr>"
-            "<tr><td>右键座位</td><td>清空 / 空置 / 锁定</td></tr>"
-            "<tr><td>悬停座位 0.4 秒</td><td>查看学生完整信息</td></tr>"
+            "<tr><td>右键座位</td><td>清空 / 空置 / 锁定 / 编辑学生</td></tr>"
+            "<tr><td>悬停座位</td><td>查看学生完整信息</td></tr>"
             "</table>"
         ) % steps
         box = QMessageBox(self)

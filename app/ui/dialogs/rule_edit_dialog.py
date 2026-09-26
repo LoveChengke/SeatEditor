@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..common import hline
+from ..common import fit_to_screen, hline
 from ...models.rule import (
     F_ATTR, F_BOOL, F_CHOICE, F_INT, F_SELECTION, F_SEAT, F_STUDENT, F_TAG, F_TEXT,
     HARD_KINDS, RULE_SPECS, SOFT_KINDS, Rule, make_rule,
@@ -41,6 +41,7 @@ class RuleEditDialog(QDialog):
         # 内容实际需要的尺寸可能比 minimumSizeHint 略大几个像素，按实际尺寸兜底，
         # 避免教师把窗口拖到最小时控件互相压住。
         self.setMinimumSize(max(480, self.width()), self.height())
+        fit_to_screen(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

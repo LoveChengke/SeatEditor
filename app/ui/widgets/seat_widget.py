@@ -42,8 +42,8 @@ class SeatHoverCard(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setStyleSheet(
-            "QFrame#HoverCard { background: #FFFFFF; border: 1px solid %s; border-radius: 8px; }"
-            "QLabel { background: transparent; }" % Color.BORDER
+            "QFrame#HoverCard { background: %s; border: 1px solid %s; border-radius: 10px; }"
+            "QLabel { background: transparent; }" % (Color.BG_CARD, Color.BORDER)
         )
         self._label = QLabel(self)
         self._label.setTextFormat(Qt.TextFormat.RichText)
@@ -95,8 +95,8 @@ def build_hover_html(
         for tag in student.tags:
             color = tag_colors.get(tag, Color.TAG_UNKNOWN)
             chips.append(
-                '<span style="background:%s;color:#FFFFFF;border-radius:6px;padding:1px 6px;font-size:10px;">%s</span>'
-                % (color, _esc(tag))
+                '<span style="background:%s;color:%s;border-radius:6px;padding:1px 6px;font-size:10px;">%s</span>'
+                % (color, Color.TEXT_ON_ACCENT, _esc(tag))
             )
         rows.append('<div style="margin-top:4px;">%s</div>' % " ".join(chips))
     if student.attrs:

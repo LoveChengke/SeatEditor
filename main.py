@@ -55,7 +55,6 @@ def main(argv=None) -> int:
     _install_excepthook()
 
     try:
-        from PyQt6.QtGui import QFont
         from PyQt6.QtWidgets import QApplication
     except ImportError as exc:  # 环境问题
         sys.stderr.write(
@@ -64,7 +63,7 @@ def main(argv=None) -> int:
         return 1
 
     from app.ui.main_window import MainWindow
-    from app.ui.style.theme import FONT_APP, FONT_FAMILIES
+    from app.ui.style.theme import apply_dark_theme, apply_dark_titlebar
 
     QApplication.setApplicationName(config.APP_NAME)
     QApplication.setApplicationDisplayName(config.APP_NAME)
@@ -72,25 +71,16 @@ def main(argv=None) -> int:
     QApplication.setApplicationVersion(config.VERSION)
 
     app = QApplication(argv)
-    app.setStyle("Fusion")
-
-    from app.ui import load_stylesheet
-    from app.ui.style.theme import ensure_font_db
-
-    ensure_font_db()
-    app.setStyleSheet(load_stylesheet())
-
-    font = QFont()
-    font.setFamilies(list(FONT_FAMILIES))
-    font.setPixelSize(FONT_APP)
-    app.setFont(font)
+    apply_dark_theme(app)
 
     window = MainWindow()
     for arg in argv[1:]:
         if arg.lower().endswith(config.PROJECT_EXT) and os.path.exists(arg):
             window.open_project(arg)
             break
-    window.show()
+    # 启动即最大化：教室座位表越宽越好用，也避免小屏 / 高 DPI 下窗口超出屏幕
+    window.showMaximized()
+    apply_dark_titlebar(window)
     return app.exec()
 
 

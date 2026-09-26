@@ -1,4 +1,4 @@
-"""讲台控件：深灰底 + 白字「讲 台」。"""
+"""讲台控件：蓝灰底 + 亮字「讲 台」。"""
 
 from __future__ import annotations
 
@@ -21,8 +21,9 @@ class PodiumWidget(QWidget):
         label = QLabel(text, self)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setStyleSheet(
-            "color: #FFFFFF; background: %s; border-radius: 6px;"
-            " font-size: %dpx; font-weight: bold; letter-spacing: 6px;" % (Color.PODIUM, FONT_PODIUM)
+            "color: %s; background: %s; border: 1px solid %s; border-radius: 10px;"
+            " font-size: %dpx; font-weight: 600; letter-spacing: 8px;"
+            % (Color.TEXT_PRIMARY, Color.PODIUM, Color.BORDER_STRONG, FONT_PODIUM)
         )
         from PyQt6.QtWidgets import QHBoxLayout
 

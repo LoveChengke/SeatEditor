@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from ..common import button, confirm, hline, warn
 from .base import ProjectPanel
+from ..dnd import MIME_SEAT, decode_seat
 from ...models.project import EV_ANY, EV_ASSIGNMENT, EV_STUDENTS, EV_TAGS, Project
 from ...services.student_service import (
     ASSIGN_ALL, ASSIGN_ASSIGNED, ASSIGN_UNASSIGNED, TAG_MODE_ALL, TAG_MODE_ANY,
@@ -26,6 +27,7 @@ from ...services.student_service import (
 )
 from ..style.theme import PANEL_STUDENT_WIDTH
 from ..widgets.student_table import StudentTableModel, StudentTableView
+from ...utils.seat_key import make_key
 
 SEARCH_DEBOUNCE_MS = 150
 
@@ -41,6 +43,7 @@ class StudentPanel(ProjectPanel):
     tag_requested = pyqtSignal(list)          # sids
     export_requested = pyqtSignal()
     template_requested = pyqtSignal()         # 下载 Excel 名单导入模板
+    clear_seat_requested = pyqtSignal(str)    # 座位 key：把座位上的学生拖回名单（取消入座）
     # 契约之外的补充信号：面板自带对话框的结果 / 右键清空座位
     students_imported = pyqtSignal(list)      # 文本导入对话框返回的学生列表
     clear_seats_requested = pyqtSignal(list)  # sids
@@ -56,6 +59,7 @@ class StudentPanel(ProjectPanel):
 
         self.setObjectName("SidePanel")
         self.setMinimumWidth(max(240, PANEL_STUDENT_WIDTH - 60))
+        self.setAcceptDrops(True)          # 支持把座位上的学生拖回名单
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -72,10 +76,8 @@ class StudentPanel(ProjectPanel):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        title = QLabel("学生名单")
-        title.setObjectName("PanelTitle")
-        root.addWidget(title)
-
+        # 不再重复画标题：停靠面板自带的标题栏已经写着「学生名单」，
+        # 两行同样的字叠在一起只会显得杂乱。
         self._search = QLineEdit()
         self._search.setPlaceholderText("搜索学号 / 姓名 / 标签")
         self._search.setClearButtonEnabled(True)
@@ -138,26 +140,34 @@ class StudentPanel(ProjectPanel):
         root.addWidget(self._stats_label)
         root.addWidget(hline())
 
-        # ---- 底部按钮
+        # ---- 底部按钮：只留主流程用得到的动作，其余收进「更多」
         grid = QGridLayout()
         grid.setSpacing(6)
-        grid.addWidget(button("导入 Excel", self.import_requested.emit, "Primary", "从 Excel 导入名单"), 0, 0)
-        grid.addWidget(button("粘贴文本", self._on_text_import, tooltip="从剪贴板文本快速录入名单"), 0, 1)
+        grid.addWidget(
+            button("导入 Excel 名单", self.import_requested.emit, "Primary",
+                   "从 Excel 导入名单（Ctrl+I）"),
+            0, 0, 1, 2,
+        )
         grid.addWidget(button("添加", self.add_requested.emit, tooltip="手动添加一名学生"), 1, 0)
         grid.addWidget(button("编辑", self._on_edit, tooltip="编辑选中学生（双击表格亦可）"), 1, 1)
         grid.addWidget(button("删除", self._on_delete, "Danger", "删除选中的学生"), 2, 0)
         grid.addWidget(button("批量标签", self._on_tag, tooltip="给选中学生批量添加 / 移除标签"), 2, 1)
-        grid.addWidget(button("导出名单", self.export_requested.emit, "Ghost", "导出当前名单"), 3, 0)
-        grid.addWidget(
-            button(
-                "名单模板",
-                self.template_requested.emit,
-                "Ghost",
-                "下载 Excel 名单模板：填好后直接用「导入 Excel」读入",
-            ),
-            3, 1,
-        )
+
+        # 用 QPushButton + 菜单（而不是 QToolButton）：跟上面几个按钮同一套 QSS，
+        # 高度 / 内边距完全一致，倒三角也不会压在文字上。
+        self._more_button = button("更多名单操作", None, "MenuButton",
+                                   "粘贴文本导入 / 导出名单 / 名单模板")
+        more_menu = QMenu(self)
+        more_menu.addAction("粘贴文本导入…", self._on_text_import)
+        more_menu.addAction("导出当前名单…",
+                            lambda _checked=False: self.export_requested.emit())
+        more_menu.addAction("下载名单导入模板…",
+                            lambda _checked=False: self.template_requested.emit())
+        self._more_button.setMenu(more_menu)
+        grid.addWidget(self._more_button, 3, 0, 1, 2)
         root.addLayout(grid)
+
+        self._view.seat_drop_requested.connect(self.clear_seat_requested.emit)
 
     def _build_tag_menu(self) -> QMenu:
         menu = QMenu(self)
@@ -210,6 +220,10 @@ class StudentPanel(ProjectPanel):
     def current_sid(self) -> str:
         sids = self.selected_sids()
         return sids[0] if sids else ""
+
+    def assign_filter(self) -> str:
+        """当前「分配状态」筛选（ASSIGN_ALL / ASSIGN_ASSIGNED / ASSIGN_UNASSIGNED）。"""
+        return str(self._assign_combo.currentData() or ASSIGN_ALL)
 
     def clear_selection(self) -> None:
         self._updating = True
@@ -412,6 +426,35 @@ class StudentPanel(ProjectPanel):
         if event not in (EV_STUDENTS, EV_TAGS, EV_ASSIGNMENT, EV_ANY):
             return
         self._schedule_refresh()
+
+    # 拖回名单 = 取消入座（面板空白处也能接住）
+    def _seat_key_of(self, event) -> str:
+        mime = event.mimeData() if hasattr(event, "mimeData") else None
+        if mime is None or not mime.hasFormat(MIME_SEAT):
+            return ""
+        data = decode_seat(mime)
+        coord = data.get("seat")
+        return make_key(coord) if coord is not None else ""
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if self._seat_key_of(event):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if self._seat_key_of(event):
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        seat_key = self._seat_key_of(event)
+        if seat_key:
+            self.clear_seat_requested.emit(seat_key)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
 
     # 工具
     def _confirm(self, text: str, title: str) -> bool:

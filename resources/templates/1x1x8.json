@@ -1,0 +1,10 @@
+{
+  "name": "单排：1 组 × 1 行 × 8 列",
+  "description": "讲台前只有一排座位，适合单人单排考试或小组围坐",
+  "groups": 1,
+  "rows": 1,
+  "cols": 8,
+  "podium_side": "top",
+  "card_size": "small",
+  "gap_after": 1
+}

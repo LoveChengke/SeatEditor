@@ -54,7 +54,7 @@ class RulePanel(ProjectPanel):
         title.setObjectName("PanelTitle")
         root.addWidget(title)
 
-        hint = QLabel("勾选启用规则，双击编辑；硬约束必须满足，软约束按权重打分。")
+        hint = QLabel("1 添加规则 → 2 排位（F5）→ 3 看报告。硬约束必须满足，软约束按权重打分。")
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -101,15 +101,19 @@ class RulePanel(ProjectPanel):
     def _build_add_menu(self) -> QMenu:
         menu = QMenu(self)
         guided = menu.addAction("自定义规则（向导）…")
-        guided.setToolTip("按「谁 → 要求 → 怎么样」拼一句话，向导自动挑好对应的规则种类")
+        guided.setToolTip("推荐：按「谁 → 要求 → 怎么样」拼一句话，向导自动挑好规则种类")
         guided.triggered.connect(lambda _checked=False: self._add_rule_via_wizard())
-        for title, kinds in (("硬约束", HARD_KINDS), ("软约束", SOFT_KINDS)):
-            menu.addSection(title)
+        # 27 条规则排成一列菜单高度接近 850px，在高 DPI / 小屏上会直接顶出屏幕。
+        # 拆成「硬约束」「软约束」两个子菜单，每个最多 14 行，任何屏幕都放得下。
+        for title, kinds in (("按类型添加：硬约束…", HARD_KINDS),
+                             ("按类型添加：软约束…", SOFT_KINDS)):
+            submenu = menu.addMenu(title)
+            submenu.setToolTipsVisible(True)
             for kind in kinds:
                 spec = RULE_SPECS.get(kind)
                 if spec is None:
                     continue
-                action = menu.addAction(spec.label)
+                action = submenu.addAction(spec.label)
                 action.setToolTip(spec.description)
                 action.triggered.connect(lambda _checked=False, k=kind: self._add_rule(k))
         return menu

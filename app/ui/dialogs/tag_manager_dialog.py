@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..common import hline
+from ..common import fit_to_screen, hline
 from ...config import TAG_PALETTE
 from ...services.student_service import StudentService
 from ..style.theme import Color
@@ -44,6 +44,7 @@ class TagManagerDialog(QDialog):
         self._build_ui()
         self._refresh()
         self.adjustSize()
+        fit_to_screen(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

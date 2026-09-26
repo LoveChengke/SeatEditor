@@ -32,12 +32,9 @@ def main() -> int:
     QSettings(config.ORG_NAME, config.APP_ID).setValue(config.SK_WELCOME_SHOWN, True)
 
     app = QApplication([])
-    app.setStyle("Fusion")
-    from app.ui import load_stylesheet
-    from app.ui.style.theme import ensure_font_db
+    from app.ui.style.theme import apply_dark_theme
 
-    ensure_font_db()
-    app.setStyleSheet(load_stylesheet())
+    apply_dark_theme(app)
 
     from app.ui.main_window import MainWindow
 

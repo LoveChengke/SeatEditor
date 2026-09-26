@@ -302,7 +302,20 @@ BUILTIN_TEMPLATES: List[Tuple[str, int, int, int]] = [
     ("1 组 × 6 行 × 6 列", 1, 6, 6),
     ("4 组 × 6 行 × 2 列", 4, 6, 2),
     ("2 组 × 8 行 × 3 列", 2, 8, 3),
+    # 单排 / 单列：一排横座（考试单排）或一列纵座（靠墙单列）
+    ("单排：1 组 × 1 行 × 8 列", 1, 1, 8),
+    ("单列：1 组 × 8 行 × 1 列", 1, 8, 1),
+    ("三组单列：3 组 × 6 行 × 1 列", 3, 6, 1),
 ]
+
+
+def suggest_card_size(groups: int, rows: int, cols: int) -> str:
+    """按形状挑一个合适的座位卡片尺寸（只在套用快速模板时使用）。
+
+    一行里的座位越多，卡片越该小一号——8 列的单排若还用中号卡片，
+    座位表就得横向滚动才能看全。
+    """
+    return "small" if int(cols) >= 5 else "medium"
 
 
 def load_layout_templates() -> List[Tuple[str, int, int, int]]:
@@ -356,4 +369,6 @@ LAYOUT_TEMPLATES: List[Tuple[str, int, int, int]] = load_layout_templates()
 
 def template_layout(index: int) -> Layout:
     name, groups, rows, cols = LAYOUT_TEMPLATES[index % len(LAYOUT_TEMPLATES)]
-    return Layout.from_template(groups, rows, cols)
+    layout = Layout.from_template(groups, rows, cols)
+    layout.card_size = suggest_card_size(groups, rows, cols)
+    return layout

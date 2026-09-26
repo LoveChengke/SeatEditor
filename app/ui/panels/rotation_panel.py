@@ -66,6 +66,11 @@ class RotationPanel(ProjectPanel):
         title.setObjectName("PanelTitle")
         root.addWidget(title)
 
+        intro = QLabel("进阶功能：按周整体换座。只想排一次座的话用不到这一页。")
+        intro.setObjectName("Hint")
+        intro.setWordWrap(True)
+        root.addWidget(intro)
+
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)

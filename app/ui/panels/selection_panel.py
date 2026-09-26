@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QVBoxLayout, QWidget,
 )
 
-from ..common import button, confirm, hline, warn
+from ..common import CollapsibleSection, button, confirm, hline, warn
 from .base import ProjectPanel
 from ...models.project import EV_ANY, EV_SELECTIONS, Project
 from ...utils.seat_key import Seat as Coord
@@ -83,21 +83,35 @@ class SelectionPanel(ProjectPanel):
         )
         grid.addWidget(button("应用高亮", self._apply_current, tooltip="在座位表上高亮该选区"), 1, 0)
         grid.addWidget(button("重命名", self._rename_current), 1, 1)
-        grid.addWidget(button("删除", self._delete_current, "Danger", "删除该选区"), 2, 0)
-        grid.addWidget(button("清空座位", self._batch_clear, tooltip="清空当前选中座位上的学生"), 2, 1)
-        grid.addWidget(button("设为空置", self._batch_disable, tooltip="当前选中座位不参与排位"), 3, 0)
-        grid.addWidget(button("批量分配", self._batch_assign, tooltip="把未分配学生依次放入这些座位"), 3, 1)
+        grid.addWidget(button("删除", self._delete_current, "Danger", "删除该选区"), 2, 0, 1, 2)
         root.addLayout(grid)
 
-        quick_hint = QLabel("快捷选区")
-        quick_hint.setObjectName("Hint")
-        root.addWidget(quick_hint)
+        # 低频入口收进折叠区：先框选座位，再用右键菜单或这里做批量操作
+        self._batch_section = CollapsibleSection(
+            "批量操作（先框选座位）", tooltip="清空 / 空置 / 批量分配：对座位表上当前选中的座位生效")
+        batch_grid = QGridLayout()
+        batch_grid.setSpacing(6)
+        batch_grid.addWidget(button("清空座位", self._batch_clear,
+                                    tooltip="清空当前选中座位上的学生"), 0, 0)
+        batch_grid.addWidget(button("设为空置", self._batch_disable,
+                                    tooltip="当前选中座位不参与排位"), 0, 1)
+        batch_grid.addWidget(button("批量分配", self._batch_assign,
+                                    tooltip="把未分配学生依次放入这些座位"), 1, 0, 1, 2)
+        batch_host = QWidget()
+        batch_host.setLayout(batch_grid)
+        self._batch_section.body_layout.addWidget(batch_host)
+        root.addWidget(self._batch_section)
+
+        self._quick_section = CollapsibleSection("快捷选区", tooltip="按分组 / 行范围 / 列范围快速生成选区")
         quick_row = QHBoxLayout()
         quick_row.setSpacing(6)
         quick_row.addWidget(button("按分组", self._quick_by_group, "Ghost"))
         quick_row.addWidget(button("按行范围", self._quick_by_row, "Ghost"))
         quick_row.addWidget(button("按列范围", self._quick_by_col, "Ghost"))
-        root.addLayout(quick_row)
+        quick_host = QWidget()
+        quick_host.setLayout(quick_row)
+        self._quick_section.body_layout.addWidget(quick_host)
+        root.addWidget(self._quick_section)
 
     # 对外接口
     def _on_project_change(self, project: Project, service=None) -> None:

@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QSplitter, QVBoxLayout, QWidget,
 )
 
-from ..common import hline
+from ..common import fit_to_screen, hline
 OK_TEXT = "✅ 全部满足"
 WARN_TEXT = "⚠️ %d 条硬约束未满足"
 
@@ -28,6 +28,7 @@ class ConflictReportDialog(QDialog):
         self.setMinimumHeight(480)
         self._build_ui()
         self.resize(620, 560)
+        fit_to_screen(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

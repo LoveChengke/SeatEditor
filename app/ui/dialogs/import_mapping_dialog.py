@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..common import hline
+from ..common import fit_to_screen, hline
 from ...storage import excel_io
 from ...storage.excel_io import FIELD_LABELS, F_NAME, F_SID
 
@@ -55,6 +55,7 @@ class ImportMappingDialog(QDialog):
         self.setMinimumWidth(680)
         self._build_ui()
         self.adjustSize()
+        fit_to_screen(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

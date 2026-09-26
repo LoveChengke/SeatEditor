@@ -11,12 +11,12 @@ from typing import Optional, Tuple
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame,
-    QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
-from ..common import hline
+from ..common import CollapsibleSection, fit_to_screen, hline
 from ...models.layout import (
     CARD_SIZES, LAYOUT_TEMPLATES, MAX_COLS, MAX_GAP, MAX_GROUPS, MAX_ROWS, MIN_COLS,
     MIN_GAP, MIN_ROWS, PODIUM_SIDES, Layout, SeatGroup, template_layout,
@@ -96,7 +96,7 @@ class LayoutEditorDialog(QDialog):
         self._template_combo.setMinimumWidth(200)
         top.addWidget(self._template_combo)
         top.addStretch(1)
-        hint = QLabel("调整左侧参数，右侧实时预览")
+        hint = QLabel("选模板 → 右侧看效果 → 确定")
         hint.setObjectName("Hint")
         top.addWidget(hint)
         root.addLayout(top)
@@ -125,14 +125,17 @@ class LayoutEditorDialog(QDialog):
     def _build_left(self) -> QWidget:
         panel = QFrame()
         panel.setObjectName("Panel")
-        panel.setMinimumWidth(320)
-        panel.setMaximumWidth(380)
         box = QVBoxLayout(panel)
         box.setContentsMargins(12, 12, 12, 12)
         box.setSpacing(8)
         caption = QLabel("分组")
         caption.setObjectName("PanelTitle")
         box.addWidget(caption)
+
+        self._shape_label = QLabel("")
+        self._shape_label.setObjectName("Hint")
+        self._shape_label.setWordWrap(True)
+        box.addWidget(self._shape_label)
 
         self._group_list = QListWidget()
         self._group_list.setMinimumHeight(80)
@@ -162,21 +165,49 @@ class LayoutEditorDialog(QDialog):
         self._cols_spin = _spin(MIN_COLS, MAX_COLS)
         self._gap_spin = _spin(MIN_GAP, MAX_GAP)
         form.addRow("组名", self._name_edit)
-        form.addRow("行数", self._rows_spin)
-        form.addRow("列数", self._cols_spin)
+        form.addRow("行数（排）", self._rows_spin)
+        form.addRow("列数（座）", self._cols_spin)
         form.addRow("组间距", self._gap_spin)
         box.addLayout(form)
 
-        level = QGroupBox("布局选项")
-        level_form = QFormLayout(level)
-        level_form.setSpacing(6)
+        # 单排 / 单列：一排一排、一列一列地加减，不用去数数字框
+        stepper = QGridLayout()
+        stepper.setSpacing(6)
+        self._row_minus_btn = QPushButton("－ 一排")
+        self._row_plus_btn = QPushButton("＋ 一排")
+        self._col_minus_btn = QPushButton("－ 一列")
+        self._col_plus_btn = QPushButton("＋ 一列")
+        self._row_minus_btn.setToolTip("当前分组减少一排")
+        self._row_plus_btn.setToolTip("当前分组增加一排")
+        self._col_minus_btn.setToolTip("当前分组减少一列（减到 1 列就是单列）")
+        self._col_plus_btn.setToolTip("当前分组增加一列（加到 8 列就是单排）")
+        self._row_minus_btn.clicked.connect(lambda: self._step_rows(-1))
+        self._row_plus_btn.clicked.connect(lambda: self._step_rows(1))
+        self._col_minus_btn.clicked.connect(lambda: self._step_cols(-1))
+        self._col_plus_btn.clicked.connect(lambda: self._step_cols(1))
+        stepper.addWidget(self._row_minus_btn, 0, 0)
+        stepper.addWidget(self._row_plus_btn, 0, 1)
+        stepper.addWidget(self._col_minus_btn, 1, 0)
+        stepper.addWidget(self._col_plus_btn, 1, 1)
+        box.addLayout(stepper)
+
         self._podium_combo = _combo(list(PODIUM_LABELS))
+        podium_form = QFormLayout()
+        podium_form.setSpacing(6)
+        podium_form.addRow("讲台方向", self._podium_combo)
+        box.addLayout(podium_form)
+
+        self._advanced = CollapsibleSection("高级选项", tooltip="座位尺寸、是否显示组标题")
+        level_form = QFormLayout()
+        level_form.setSpacing(6)
         self._card_combo = _combo([(CARD_SIZE_LABELS[key], key) for key in CARD_ORDER])
         self._title_check = QCheckBox("显示组标题")
-        level_form.addRow("讲台方向", self._podium_combo)
         level_form.addRow("座位尺寸", self._card_combo)
         level_form.addRow("", self._title_check)
-        box.addWidget(level)
+        level_host = QWidget()
+        level_host.setLayout(level_form)
+        self._advanced.body_layout.addWidget(level_host)
+        box.addWidget(self._advanced)
 
         self._name_edit.textEdited.connect(self._on_name_edited)
         for spin in (self._rows_spin, self._cols_spin, self._gap_spin):
@@ -184,7 +215,16 @@ class LayoutEditorDialog(QDialog):
         self._podium_combo.currentIndexChanged.connect(self._on_level_changed)
         self._card_combo.currentIndexChanged.connect(self._on_level_changed)
         self._title_check.toggled.connect(self._on_level_changed)
-        return panel
+
+        # 参数区放进滚动区：屏幕矮的时候可以滚动，而不是把控件压到互相重叠
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        area.setWidget(panel)
+        area.setMinimumWidth(324)
+        area.setMaximumWidth(392)
+        return area
 
     def _build_preview(self) -> QWidget:
         panel = QFrame()
@@ -225,21 +265,25 @@ class LayoutEditorDialog(QDialog):
 
         显式的最小尺寸会覆盖布局自身的最小尺寸（Qt 的 SetDefaultConstraint
         语义）：一旦设得比内容所需更小，布局就会把控件压缩到互相重叠。
-        这里统一取「下限」与「内容真实需求」的较大者。
+        这里统一取「下限」与「内容真实需求」的较大者，再用屏幕可用区域封顶
+        （高 DPI / 小屏笔记本上，写死的尺寸会把「确定」按钮顶到屏幕外）。
         """
         hint = self.minimumSizeHint()
         min_width = max(MIN_WIDTH, int(hint.width()))
         min_height = max(MIN_HEIGHT, int(hint.height()))
-        self.setMinimumSize(min_width, min_height)
         width = max(PREFERRED_WIDTH, int(hint.width()))
         height = max(PREFERRED_HEIGHT, int(hint.height()))
-        # 小屏幕上不要让窗口超出可用区域
         screen = self.screen() or QApplication.primaryScreen()
         if screen is not None:
             available = screen.availableGeometry()
-            width = max(min_width, min(width, available.width() - 40))
-            height = max(min_height, min(height, available.height() - 60))
-        self.resize(width, height)
+            max_width = max(520, available.width() - 40)
+            max_height = max(420, available.height() - 60)
+            min_width = min(min_width, max_width)
+            min_height = min(min_height, max_height)
+            width = min(width, max_width)
+            height = min(height, max_height)
+        self.setMinimumSize(min_width, min_height)
+        self.resize(max(min_width, width), max(min_height, height))
 
     # 数据同步
     def _group_at(self, row: int) -> Optional[SeatGroup]:
@@ -304,6 +348,45 @@ class LayoutEditorDialog(QDialog):
         self._down_btn.setEnabled(0 <= row < count - 1)
         self._del_btn.setEnabled(count > 1 and row >= 0)
         self._add_btn.setEnabled(count < MAX_GROUPS)
+        has_group = self._group_at(row) is not None
+        self._row_minus_btn.setEnabled(has_group and self._rows_spin.value() > MIN_ROWS)
+        self._row_plus_btn.setEnabled(has_group and self._rows_spin.value() < MAX_ROWS)
+        self._col_minus_btn.setEnabled(has_group and self._cols_spin.value() > MIN_COLS)
+        self._col_plus_btn.setEnabled(has_group and self._cols_spin.value() < MAX_COLS)
+        self._update_shape_label()
+
+    def _update_shape_label(self) -> None:
+        """一句话说清当前布局形状（单排 / 单列会被点名）。"""
+        layout = self._layout
+        groups = layout.groups
+        total = layout.seat_count()
+        if not groups:
+            self._shape_label.setText("还没有分组")
+            return
+        rows = max([g.rows for g in groups])
+        cols = groups[0].cols
+        same = all(g.rows == rows and g.cols == cols for g in groups)
+        if len(groups) == 1 and rows == 1:
+            shape = "单排：1 排 × %d 列" % cols
+        elif len(groups) == 1 and cols == 1:
+            shape = "单列：%d 排 × 1 列" % rows
+        elif same and cols == 1:
+            shape = "%d 组单列：每组 %d 排" % (len(groups), rows)
+        elif same and rows == 1:
+            shape = "%d 组，每组都是单排：%d 排 × %d 列" % (len(groups), rows, cols)
+        elif same:
+            shape = "%d 组 × %d 排 × %d 列" % (len(groups), rows, cols)
+        else:
+            shape = "%d 组（每组行列不同）" % len(groups)
+        self._shape_label.setText("%s，共 %d 个座位" % (shape, total))
+
+    def _step_rows(self, delta: int) -> None:
+        """加 / 减一整排（当前分组）。"""
+        self._rows_spin.setValue(self._rows_spin.value() + int(delta))
+
+    def _step_cols(self, delta: int) -> None:
+        """加 / 减一整列（当前分组）；减到 1 列就是单列布局。"""
+        self._cols_spin.setValue(self._cols_spin.value() + int(delta))
 
     def _update_list_text(self, row: int) -> None:
         group = self._group_at(row)
@@ -342,6 +425,7 @@ class LayoutEditorDialog(QDialog):
         group.gap_after = self._gap_spin.value()
         self._layout.prune_disabled()
         self._update_list_text(row)
+        self._update_buttons()
         self._schedule_preview()
 
     def _on_level_changed(self, *_args) -> None:
