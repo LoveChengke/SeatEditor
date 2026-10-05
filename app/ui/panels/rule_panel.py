@@ -31,6 +31,7 @@ class RulePanel(ProjectPanel):
     """硬约束 / 软约束列表面板。"""
 
     rules_changed = pyqtSignal()
+    ai_requested = pyqtSignal()   # 「大白话生成规则（AI）」；由主窗口打开 AI 对话框（它才有 solve）
 
     def __init__(self, project: Project, parent: Optional[QWidget] = None) -> None:
         super().__init__(project, parent)
@@ -54,7 +55,8 @@ class RulePanel(ProjectPanel):
         title.setObjectName("PanelTitle")
         root.addWidget(title)
 
-        hint = QLabel("1 添加规则 → 2 排位（F5）→ 3 看报告。硬约束必须满足，软约束按权重打分。")
+        hint = QLabel("点「添加规则」挑几条要求（不挑也行）→ 按 F5 一键排位。\n"
+                      "必须满足 = 一定要做到；尽量满足 = 做到了更好。")
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -71,13 +73,13 @@ class RulePanel(ProjectPanel):
         root.addLayout(toolbar)
         root.addWidget(hline())
 
-        self._hard_title = QLabel("硬约束")
+        self._hard_title = QLabel("必须满足")
         self._hard_title.setObjectName("PanelTitle")
         root.addWidget(self._hard_title)
         self._hard_list = self._make_list(HARD)
         root.addWidget(self._hard_list, 1)
 
-        self._soft_title = QLabel("软约束")
+        self._soft_title = QLabel("尽量满足")
         self._soft_title.setObjectName("PanelTitle")
         root.addWidget(self._soft_title)
         self._soft_list = self._make_list(SOFT)
@@ -93,6 +95,10 @@ class RulePanel(ProjectPanel):
         widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         widget.setMinimumHeight(90)
         widget.setAlternatingRowColors(False)
+        # 规则描述比面板宽（「…（权重 5）」这类后缀在 300px 面板里放不下），
+        # 换行显示全文而不是横向截断——截断会把权重值藏掉，看着像信息丢了。
+        widget.setWordWrap(True)
+        widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         widget.itemChanged.connect(self._on_item_changed)
         widget.itemDoubleClicked.connect(lambda _item: self._edit_rule())
         self._lists[rule_type] = widget
@@ -100,13 +106,17 @@ class RulePanel(ProjectPanel):
 
     def _build_add_menu(self) -> QMenu:
         menu = QMenu(self)
+        ai = menu.addAction("大白话生成规则（AI）…")
+        ai.setToolTip("用一句话描述要求（如「视力差的坐前排」），AI 转成规则后确认再添加")
+        ai.triggered.connect(lambda _checked=False: self.ai_requested.emit())
         guided = menu.addAction("自定义规则（向导）…")
         guided.setToolTip("推荐：按「谁 → 要求 → 怎么样」拼一句话，向导自动挑好规则种类")
         guided.triggered.connect(lambda _checked=False: self._add_rule_via_wizard())
+        menu.addSeparator()
         # 27 条规则排成一列菜单高度接近 850px，在高 DPI / 小屏上会直接顶出屏幕。
-        # 拆成「硬约束」「软约束」两个子菜单，每个最多 14 行，任何屏幕都放得下。
-        for title, kinds in (("按类型添加：硬约束…", HARD_KINDS),
-                             ("按类型添加：软约束…", SOFT_KINDS)):
+        # 拆成「必须满足」「尽量满足」两个子菜单，每个最多 14 行，任何屏幕都放得下。
+        for title, kinds in (("按类型添加：必须满足类…", HARD_KINDS),
+                             ("按类型添加：尽量满足类…", SOFT_KINDS)):
             submenu = menu.addMenu(title)
             submenu.setToolTipsVisible(True)
             for kind in kinds:
@@ -129,8 +139,8 @@ class RulePanel(ProjectPanel):
             rules = list(self._project.rules)
             self._fill(self._hard_list, [r for r in rules if r.is_hard])
             self._fill(self._soft_list, [r for r in rules if r.is_soft])
-            self._hard_title.setText("硬约束（%d）" % self._hard_list.count())
-            self._soft_title.setText("软约束（%d）" % self._soft_list.count())
+            self._hard_title.setText("必须满足（%d）" % self._hard_list.count())
+            self._soft_title.setText("尽量满足（%d）" % self._soft_list.count())
         except Exception as exc:  # 刷新失败不应崩溃
             self._error_label.setText("规则列表刷新失败：%s" % exc)
         finally:
@@ -157,7 +167,10 @@ class RulePanel(ProjectPanel):
             text = rule.label
         if rule.is_soft:
             text = "%s　（权重 %g）" % (text, rule.weight)
-        return text
+        return _split_for_panel(text)
+
+    # _split_for_panel 放在模块级（见文件尾）：换行只依赖文本本身，
+    # 不依赖面板状态，放方法里反而说不清输入输出。
 
     # 选中项
     def _rule_of_item(self, item: Optional[QListWidgetItem]) -> Optional[Rule]:
@@ -329,3 +342,26 @@ class RulePanel(ProjectPanel):
 
     def _warn(self, text: str, title: str = "提示") -> None:
         warn(self, text, title)
+
+
+# 单行放不下的阈值（13px 中文 ≈ 15 字）；规则面板的文本区约 210px 宽。
+_PANEL_LINE_CHARS = 15
+_SPACES = (" ", "　")
+
+
+def _split_for_panel(text: str) -> str:
+    """过长的规则描述在词间显式断行，两行都完整可读。
+
+    不能指望 QListWidget 的 wordWrap：实测描述只超出十几像素时它仍保持
+    单行并用省略号截断（把权重、参数整个藏掉），超出很多时才换行——
+    行为随宽度临界跳变，不可靠。这里在空格处（全角空格也算）挑一个
+    两行最均衡的断点插入换行，任何面板宽度下全文都可见。
+    """
+    if len(text) <= _PANEL_LINE_CHARS:
+        return text
+    cuts = [i for i, ch in enumerate(text) if ch in _SPACES]
+    inner = [i for i in cuts if 0 < i < len(text) - 1]
+    if not inner:
+        return text
+    best = min(inner, key=lambda i: max(i, len(text) - i))
+    return text[:best].rstrip() + "\n" + text[best:].lstrip()

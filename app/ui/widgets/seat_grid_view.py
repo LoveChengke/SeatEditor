@@ -112,9 +112,9 @@ class SeatGridView(QWidget):
         self._root.setSpacing(0)
 
         self._rubber = QRubberBand(QRubberBand.Shape.Rectangle, self._canvas)
-        # rgba 里的 61,155,245 就是 Color.PRIMARY (#3D9BF5)，QSS 之外无法引用常量
+        # rgba 里的 76,151,255 就是 Color.PRIMARY (#4C97FF)，QSS 之外无法引用常量
         self._rubber.setStyleSheet(
-            "QRubberBand { border: 1px dashed %s; background: rgba(61,155,245,45); }" % Color.PRIMARY
+            "QRubberBand { border: 1px dashed %s; background: rgba(76,151,255,45); }" % Color.PRIMARY
         )
 
         self._podium_top: Optional[PodiumWidget] = None

@@ -29,8 +29,8 @@ from ...utils.natural_sort import natural_key
 #   fixed     —— 固定写死的参数
 #   tags_only —— 只支持按标签选对象（该规则的对象参数本来就是标签类型）
 GOALS: Tuple[Dict[str, Any], ...] = (
-    {"key": "in_region", "label": "必须在某个选区内", "kind": "region_required", "need": ("selection",)},
-    {"key": "out_region", "label": "不得进入某个选区", "kind": "region_forbidden", "need": ("selection",)},
+    {"key": "in_region", "label": "必须在某个区域内", "kind": "region_required", "need": ("selection",)},
+    {"key": "out_region", "label": "不得进入某个区域", "kind": "region_forbidden", "need": ("selection",)},
     {"key": "front_rows", "label": "必须坐在讲台侧的前 N 排", "kind": "front_required", "need": ("rows",)},
     {"key": "must_desk", "label": "必须与…同桌", "kind": "must_desk", "subject": "a", "need": ("object_b",)},
     {"key": "forbid_desk", "label": "不得与…同桌", "kind": "forbid_desk", "subject": "a", "need": ("object_b",)},
@@ -225,7 +225,7 @@ class RuleWizardDialog(QDialog):
                     combo.addItem("%s（%d 座）" % (selection.name, len(selection.seats)), selection.id)
                 combo.currentIndexChanged.connect(self._update_preview)
                 self._param_widgets["selection"] = combo
-                self._param_form.addRow("选区", combo)
+                self._param_form.addRow("区域", combo)
             elif name == "rows":
                 spin = QSpinBox()
                 spin.setRange(1, max(1, int(self.project.layout.max_rows)))
@@ -307,7 +307,7 @@ class RuleWizardDialog(QDialog):
             text = "（预览生成失败：%s）" % exc
         weight = RULE_SPECS[rule.kind].default_weight if rule.is_soft else None
         if weight is not None:
-            text = "%s　（权重 %g）" % (text, weight)
+            text = "%s　（重要程度 %g）" % (text, weight)
         self._preview.setText("这条规则是：" + text)
 
     # 保存

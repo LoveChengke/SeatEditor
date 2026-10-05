@@ -174,7 +174,7 @@ class StudentTableModel(QAbstractTableModel):
                 return "—"
             return "　".join("%s %g" % (k, v) for k, v in student.attrs.items())
         if column == COL_SEAT:
-            return self._seat_text(student) or "未分配"
+            return self._seat_text(student) or "未入座"
         return ""
 
     def _seat_text(self, student: Student) -> str:
@@ -229,6 +229,9 @@ class StudentTableView(QTableView):
         self.setAlternatingRowColors(True)
         self.setSortingEnabled(True)
         self.setWordWrap(False)
+        # 标签列内容长短不一，截断时必须显式给省略号（悬停 tooltip 有全文），
+        # 否则「视力差、班干部」看着像「视力差、班」，老师会以为数据丢了
+        self.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.setShowGrid(False)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
@@ -264,8 +267,8 @@ class StudentTableView(QTableView):
         # 学号列要放下 8 位学号（如 20240001），窄一点都不行——截成「20240…」老师没法核对
         self.setColumnWidth(COL_SID, 86)
         self.setColumnWidth(COL_NAME, 74)
-        self.setColumnWidth(COL_TAGS, 110)
-        self.setColumnWidth(COL_ATTRS, 120)
+        self.setColumnWidth(COL_TAGS, 124)
+        self.setColumnWidth(COL_ATTRS, 112)
 
     # 拖拽
     def selected_sids(self) -> List[str]:

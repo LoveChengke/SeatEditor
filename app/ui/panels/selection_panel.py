@@ -59,7 +59,7 @@ class SelectionPanel(ProjectPanel):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        title = QLabel("座位选区")
+        title = QLabel("常用区域")
         title.setObjectName("PanelTitle")
         root.addWidget(title)
 
@@ -78,31 +78,31 @@ class SelectionPanel(ProjectPanel):
         grid = QGridLayout()
         grid.setSpacing(6)
         grid.addWidget(
-            button("用当前选中座位新建选区", self._create_from_seats, "Primary", "把座位表当前框选保存为选区"),
+            button("把选中的座位存为区域", self._create_from_seats, "Primary", "先在座位表上框选，再点这里保存"),
             0, 0, 1, 2,
         )
-        grid.addWidget(button("应用高亮", self._apply_current, tooltip="在座位表上高亮该选区"), 1, 0)
+        grid.addWidget(button("应用高亮", self._apply_current, tooltip="在座位表上高亮该区域"), 1, 0)
         grid.addWidget(button("重命名", self._rename_current), 1, 1)
-        grid.addWidget(button("删除", self._delete_current, "Danger", "删除该选区"), 2, 0, 1, 2)
+        grid.addWidget(button("删除", self._delete_current, "Danger", "删除该区域"), 2, 0, 1, 2)
         root.addLayout(grid)
 
         # 低频入口收进折叠区：先框选座位，再用右键菜单或这里做批量操作
         self._batch_section = CollapsibleSection(
-            "批量操作（先框选座位）", tooltip="清空 / 空置 / 批量分配：对座位表上当前选中的座位生效")
+            "批量操作（先框选座位）", tooltip="清空 / 留空 / 批量入座：对座位表上当前选中的座位生效")
         batch_grid = QGridLayout()
         batch_grid.setSpacing(6)
         batch_grid.addWidget(button("清空座位", self._batch_clear,
                                     tooltip="清空当前选中座位上的学生"), 0, 0)
-        batch_grid.addWidget(button("设为空置", self._batch_disable,
+        batch_grid.addWidget(button("设为留空", self._batch_disable,
                                     tooltip="当前选中座位不参与排位"), 0, 1)
         batch_grid.addWidget(button("批量分配", self._batch_assign,
-                                    tooltip="把未分配学生依次放入这些座位"), 1, 0, 1, 2)
+                                    tooltip="把未入座的学生依次放进这些座位"), 1, 0, 1, 2)
         batch_host = QWidget()
         batch_host.setLayout(batch_grid)
         self._batch_section.body_layout.addWidget(batch_host)
         root.addWidget(self._batch_section)
 
-        self._quick_section = CollapsibleSection("快捷选区", tooltip="按分组 / 行范围 / 列范围快速生成选区")
+        self._quick_section = CollapsibleSection("快捷区域", tooltip="按分组 / 排 / 列快速生成一片座位区域")
         quick_row = QHBoxLayout()
         quick_row.setSpacing(6)
         quick_row.addWidget(button("按分组", self._quick_by_group, "Ghost"))
@@ -118,7 +118,7 @@ class SelectionPanel(ProjectPanel):
         self._current_seats = set()
 
     def refresh(self) -> None:
-        """按 ``project.selections`` 重建选区列表。"""
+        """按 ``project.selections`` 重建区域列表。"""
         if self._project is None:
             return
         current_id = self._current_id()
@@ -130,13 +130,13 @@ class SelectionPanel(ProjectPanel):
                 item.setToolTip("%s\n共 %d 个座位" % (selection.name, len(selection.seats)))
                 self._list.addItem(item)
         except Exception as exc:  # 刷新失败不应崩溃
-            QMessageBox.warning(self, "提示", "选区列表刷新失败：%s" % exc)
+            QMessageBox.warning(self, "提示", "区域列表刷新失败：%s" % exc)
         if current_id:
             self._select_id(current_id)
         self._update_hint()
 
     def set_current_seats(self, seats: set) -> None:
-        """记录座位表当前选中的座位（供「新建选区」与批量操作使用）。"""
+        """记录座位表当前选中的座位（供「新建区域」与批量操作使用）。"""
         result: Set[Coord] = set()
         for seat in seats or ():
             try:
@@ -179,7 +179,7 @@ class SelectionPanel(ProjectPanel):
             return
         total = len(self._project.selections) if self._project is not None else 0
         name, ok = QInputDialog.getText(
-            self, "新建选区", "选区名称：", QLineEdit.EchoMode.Normal, "选区 %d" % (total + 1)
+            self, "新建区域", "区域名称：", QLineEdit.EchoMode.Normal, "区域 %d" % (total + 1)
         )
         if not ok or not str(name).strip():
             return
@@ -188,17 +188,17 @@ class SelectionPanel(ProjectPanel):
     def _apply_current(self) -> None:
         selection = self._current_selection()
         if selection is None:
-            self._warn("请先在上方列表中选择一个选区。")
+            self._warn("请先在上方列表中选择一个区域。")
             return
         self.apply_requested.emit(selection.id)
 
     def _rename_current(self) -> None:
         selection = self._current_selection()
         if selection is None:
-            self._warn("请先在上方列表中选择一个选区。")
+            self._warn("请先在上方列表中选择一个区域。")
             return
         name, ok = QInputDialog.getText(
-            self, "重命名选区", "新的选区名称：", QLineEdit.EchoMode.Normal, selection.name
+            self, "重命名区域", "新的区域名称：", QLineEdit.EchoMode.Normal, selection.name
         )
         if not ok or not str(name).strip():
             return
@@ -210,9 +210,9 @@ class SelectionPanel(ProjectPanel):
     def _delete_current(self) -> None:
         selection = self._current_selection()
         if selection is None:
-            self._warn("请先在上方列表中选择一个选区。")
+            self._warn("请先在上方列表中选择一个区域。")
             return
-        if not self._confirm("确定删除选区「%s」吗？" % selection.name, "删除选区"):
+        if not self._confirm("确定删除区域「%s」吗？" % selection.name, "删除区域"):
             return
         self.selection_deleted.emit(selection.id)
 
@@ -243,14 +243,14 @@ class SelectionPanel(ProjectPanel):
             return
         self.batch_assign_requested.emit(seats)
 
-    # 快捷选区
+    # 快捷区域
     def _quick_by_group(self) -> None:
         layout = self._project.layout if self._project is not None else None
         if layout is None or layout.group_count <= 0:
             self._warn("当前布局没有分组，请先在「布局」中配置教室。")
             return
         names = [layout.group_name(index) for index in range(layout.group_count)]
-        name, ok = QInputDialog.getItem(self, "按分组新建选区", "选择分组：", names, 0, False)
+        name, ok = QInputDialog.getItem(self, "按分组新建区域", "选择分组：", names, 0, False)
         if not ok or not name:
             return
         index = names.index(name)
@@ -262,11 +262,11 @@ class SelectionPanel(ProjectPanel):
         if max_rows <= 0:
             self._warn("当前布局没有可用座位。")
             return
-        start, ok = QInputDialog.getInt(self, "按行范围新建选区", "起始排（从 1 开始）：", 1, 1, max_rows, 1)
+        start, ok = QInputDialog.getInt(self, "按排新建区域", "从第几排开始（从 1 数）：", 1, 1, max_rows, 1)
         if not ok:
             return
         end, ok = QInputDialog.getInt(
-            self, "按行范围新建选区", "结束排：", min(start + 1, max_rows), 1, max_rows, 1
+            self, "按排新建区域", "到第几排：", min(start + 1, max_rows), 1, max_rows, 1
         )
         if not ok:
             return
@@ -280,11 +280,11 @@ class SelectionPanel(ProjectPanel):
         if max_cols <= 0:
             self._warn("当前布局没有可用座位。")
             return
-        start, ok = QInputDialog.getInt(self, "按列范围新建选区", "起始列（从 1 开始）：", 1, 1, max_cols, 1)
+        start, ok = QInputDialog.getInt(self, "按列新建区域", "从第几列开始（从 1 数）：", 1, 1, max_cols, 1)
         if not ok:
             return
         end, ok = QInputDialog.getInt(
-            self, "按列范围新建选区", "结束列：", min(start + 1, max_cols), 1, max_cols, 1
+            self, "按列新建区域", "到第几列：", min(start + 1, max_cols), 1, max_cols, 1
         )
         if not ok:
             return
@@ -297,7 +297,7 @@ class SelectionPanel(ProjectPanel):
             self._warn("该范围内没有座位。")
             return
         name, ok = QInputDialog.getText(
-            self, "命名选区", "选区名称：", QLineEdit.EchoMode.Normal, default_name
+            self, "命名区域", "区域名称：", QLineEdit.EchoMode.Normal, default_name
         )
         if not ok or not str(name).strip():
             return

@@ -49,6 +49,20 @@ SK_SHOW_GROUP_TITLE = "view/show_group_title"
 SK_CARD_SIZE = "view/card_size"
 SK_SHOW_SELECTION = "view/show_selection"
 SK_WELCOME_SHOWN = "welcome/shown"
+SK_AI_ENDPOINT = "ai/endpoint"        # OpenAI 兼容接口地址（到 /v4 /v1 这级，不含 /chat/completions）
+SK_AI_API_KEY = "ai/api_key"
+SK_AI_MODEL = "ai/model"
+
+# AI 服务商预设：名称 -> (接口地址, 推荐模型名)。全部是 OpenAI 兼容的 chat/completions。
+# 没列进去的服务商只要兼容 OpenAI 格式，在「AI 设置」里手填地址即可。
+AI_PRESETS = (
+    ("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash"),
+    ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
+    ("月之暗面 Kimi", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
+    ("阿里通义千问", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus"),
+    ("本地 Ollama", "http://127.0.0.1:11434/v1", ""),
+    ("自定义…", "", ""),
+)
 
 # Excel 表头别名
 # 自动识别表头：值越小优先级越高
@@ -78,10 +92,10 @@ TAG_PALETTE = [
     "#F04438", "#14B8A6", "#F59E0B", "#8B5CF6",
 ]
 
-# 空状态引导
+# 空状态引导（与开始引导对话框保持同一套说法）
 WELCOME_STEPS = (
-    "1. 【布局】教室几组、几排、几列（顶部的「快速模板」可一键套用）",
-    "2. 【名单】导入 Excel 名单，或点「添加」手动输入",
-    "3. 【规则】选几条要求（可跳过），按 F5 一键排位",
-    "4. 【微调】拖拽换座；满意后导出 Excel / PNG 座位表",
+    "1. 【教室布局】教室分几组、几排、几列——点顶部「教室布局」，选个模板就行",
+    "2. 【学生名单】点「导入学生名单」选 Excel 文件；没有 Excel 也可以手动添加",
+    "3. 【排座规则】挑几条要求（不挑也行），比如「视力差的坐前排」",
+    "4. 【排位导出】按 F5 一键排位，拖一拖微调，满意就导出 Excel / 图片",
 )

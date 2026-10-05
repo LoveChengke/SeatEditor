@@ -138,7 +138,7 @@ class LayoutEditorDialog(QDialog):
         box.addWidget(self._shape_label)
 
         self._group_list = QListWidget()
-        self._group_list.setMinimumHeight(80)
+        self._group_list.setMinimumHeight(64)
         self._group_list.currentRowChanged.connect(self._load_group)
         box.addWidget(self._group_list, 1)
 
@@ -151,12 +151,12 @@ class LayoutEditorDialog(QDialog):
         self._del_btn.clicked.connect(self._remove_group)
         self._up_btn.clicked.connect(lambda: self._move_group(-1))
         self._down_btn.clicked.connect(lambda: self._move_group(1))
-        for buttons in ((self._add_btn, self._del_btn), (self._up_btn, self._down_btn)):
-            row = QHBoxLayout()
-            row.setSpacing(6)
-            for button in buttons:
-                row.addWidget(button)
-            box.addLayout(row)
+        # 四个按钮一行：两行按钮占的高度在小窗口里会把「组间距」挤出首屏
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        for button in (self._add_btn, self._del_btn, self._up_btn, self._down_btn):
+            row.addWidget(button)
+        box.addLayout(row)
 
         form = QFormLayout()
         form.setSpacing(6)
@@ -165,18 +165,26 @@ class LayoutEditorDialog(QDialog):
         self._cols_spin = _spin(MIN_COLS, MAX_COLS)
         self._gap_spin = _spin(MIN_GAP, MAX_GAP)
         form.addRow("组名", self._name_edit)
-        form.addRow("行数（排）", self._rows_spin)
-        form.addRow("列数（座）", self._cols_spin)
+        # 行数 / 列数并排一行（QFormLayout 没有四参数 addRow，自拼一个水平行），
+        # 省出的高度让「组间距」完整落在首屏内，不再被滚动视口裁掉半截
+        shape_row = QHBoxLayout()
+        shape_row.setSpacing(6)
+        for label_text, spin in (("行数（排）", self._rows_spin), ("列数（座）", self._cols_spin)):
+            label = QLabel(label_text)
+            label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            shape_row.addWidget(label)
+            shape_row.addWidget(spin, 1)
+        form.addRow(shape_row)
         form.addRow("组间距", self._gap_spin)
         box.addLayout(form)
 
         # 单排 / 单列：一排一排、一列一列地加减，不用去数数字框
-        stepper = QGridLayout()
+        stepper = QHBoxLayout()
         stepper.setSpacing(6)
-        self._row_minus_btn = QPushButton("－ 一排")
-        self._row_plus_btn = QPushButton("＋ 一排")
-        self._col_minus_btn = QPushButton("－ 一列")
-        self._col_plus_btn = QPushButton("＋ 一列")
+        self._row_minus_btn = QPushButton("－排")
+        self._row_plus_btn = QPushButton("＋排")
+        self._col_minus_btn = QPushButton("－列")
+        self._col_plus_btn = QPushButton("＋列")
         self._row_minus_btn.setToolTip("当前分组减少一排")
         self._row_plus_btn.setToolTip("当前分组增加一排")
         self._col_minus_btn.setToolTip("当前分组减少一列（减到 1 列就是单列）")
@@ -185,10 +193,10 @@ class LayoutEditorDialog(QDialog):
         self._row_plus_btn.clicked.connect(lambda: self._step_rows(1))
         self._col_minus_btn.clicked.connect(lambda: self._step_cols(-1))
         self._col_plus_btn.clicked.connect(lambda: self._step_cols(1))
-        stepper.addWidget(self._row_minus_btn, 0, 0)
-        stepper.addWidget(self._row_plus_btn, 0, 1)
-        stepper.addWidget(self._col_minus_btn, 1, 0)
-        stepper.addWidget(self._col_plus_btn, 1, 1)
+        stepper.addWidget(self._row_minus_btn)
+        stepper.addWidget(self._row_plus_btn)
+        stepper.addWidget(self._col_minus_btn)
+        stepper.addWidget(self._col_plus_btn)
         box.addLayout(stepper)
 
         self._podium_combo = _combo(list(PODIUM_LABELS))
@@ -501,7 +509,7 @@ class LayoutEditorDialog(QDialog):
         label = QLabel("讲　台", frame)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setStyleSheet("color: %s; font-size: %dpx; font-weight: bold; background: transparent;"
-                            % (Color.BG_PANEL, FONT_PODIUM))
+                            % (Color.TEXT_PRIMARY, FONT_PODIUM))
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(label)
@@ -518,7 +526,7 @@ class LayoutEditorDialog(QDialog):
         frame.setStyleSheet("QFrame { background: %s; border: 1px %s %s; border-radius: %dpx; }"
                             % (background, style, border, radius))
         frame.setToolTip("第 %d 组 第 %d 排 第 %d 列%s"
-                         % (gi + 1, row + 1, col + 1, "（空置）" if style == "dashed" else ""))
+                         % (gi + 1, row + 1, col + 1, "（留空）" if style == "dashed" else ""))
         return frame
 
     def _rebuild_preview(self) -> None:

@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 
 from ..common import fit_to_screen, hline
 OK_TEXT = "✅ 全部满足"
-WARN_TEXT = "⚠️ %d 条硬约束未满足"
+WARN_TEXT = "⚠️ 有 %d 条「必须满足」没做到"
 
 
 class ConflictReportDialog(QDialog):
@@ -73,7 +73,7 @@ class ConflictReportDialog(QDialog):
         return box
 
     def _build_hard_box(self) -> QWidget:
-        box = QGroupBox("硬约束")
+        box = QGroupBox("必须满足的要求")
         layout = QVBoxLayout(box)
         layout.setSpacing(6)
         violations = list(getattr(self.solution, "hard_violations", []) or [])
@@ -82,7 +82,7 @@ class ConflictReportDialog(QDialog):
         layout.addWidget(status)
 
         if not violations:
-            hint = QLabel("所有硬约束均已满足，可以放心导出座位表。")
+            hint = QLabel("所有「必须满足」的要求都做到了，可以放心导出座位表。")
             hint.setObjectName("Hint")
             hint.setWordWrap(True)
             layout.addWidget(hint)
@@ -108,7 +108,7 @@ class ConflictReportDialog(QDialog):
         return box
 
     def _build_soft_box(self) -> QWidget:
-        box = QGroupBox("软约束得分")
+        box = QGroupBox("尽量满足的情况")
         layout = QVBoxLayout(box)
         layout.setSpacing(6)
         score = float(getattr(self.solution, "soft_score", 0.0) or 0.0)
@@ -118,7 +118,7 @@ class ConflictReportDialog(QDialog):
 
         scores = list(getattr(self.solution, "rule_scores", []) or [])
         if not scores:
-            hint = QLabel("本次排位没有启用任何软约束。")
+            hint = QLabel("本次排位没有设置「尽量满足」类的要求。")
             hint.setObjectName("Hint")
             layout.addWidget(hint)
             layout.addStretch(1)
@@ -135,7 +135,7 @@ class ConflictReportDialog(QDialog):
             weight = float(getattr(rule_score, "weight", 1.0) or 0.0)
             satisfaction = max(0.0, min(1.0, float(getattr(rule_score, "satisfaction", 0.0) or 0.0)))
             percent = int(round(satisfaction * 100))
-            name = QLabel("%s（权重 %.2f）" % (label, weight))
+            name = QLabel("%s（重要程度 %g）" % (label, weight))
             bar = QProgressBar()
             bar.setRange(0, 100)
             bar.setValue(percent)

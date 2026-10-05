@@ -24,6 +24,7 @@ scripts/main_smoke.py
 scripts/soak.py
 scripts/bench.py
 
-# 编辑器
+# 编辑器与 AI 会话产物
 .vscode/
 .idea/
+.zcode/

@@ -119,9 +119,9 @@ class StudentPanel(ProjectPanel):
         state_row.addWidget(self._gender_combo, 1)
 
         self._assign_combo = QComboBox()
-        self._assign_combo.addItem("全部分配状态", ASSIGN_ALL)
-        self._assign_combo.addItem("已分配", ASSIGN_ASSIGNED)
-        self._assign_combo.addItem("未分配", ASSIGN_UNASSIGNED)
+        self._assign_combo.addItem("入座情况", ASSIGN_ALL)
+        self._assign_combo.addItem("已入座", ASSIGN_ASSIGNED)
+        self._assign_combo.addItem("未入座", ASSIGN_UNASSIGNED)
         self._assign_combo.currentIndexChanged.connect(lambda _index: self._apply_filter())
         state_row.addWidget(self._assign_combo, 1)
         root.addLayout(state_row)
@@ -135,7 +135,7 @@ class StudentPanel(ProjectPanel):
         self._view.selectionModel().selectionChanged.connect(self._on_selection_changed)
         root.addWidget(self._view, 1)
 
-        self._stats_label = QLabel("共 0 人 · 已分配 0")
+        self._stats_label = QLabel("共 0 人 · 已入座 0")
         self._stats_label.setObjectName("Hint")
         root.addWidget(self._stats_label)
         root.addWidget(hline())
@@ -151,11 +151,11 @@ class StudentPanel(ProjectPanel):
         grid.addWidget(button("添加", self.add_requested.emit, tooltip="手动添加一名学生"), 1, 0)
         grid.addWidget(button("编辑", self._on_edit, tooltip="编辑选中学生（双击表格亦可）"), 1, 1)
         grid.addWidget(button("删除", self._on_delete, "Danger", "删除选中的学生"), 2, 0)
-        grid.addWidget(button("批量标签", self._on_tag, tooltip="给选中学生批量添加 / 移除标签"), 2, 1)
+        grid.addWidget(button("批量打标签", self._on_tag, tooltip="给选中的学生批量添加 / 移除标签"), 2, 1)
 
         # 用 QPushButton + 菜单（而不是 QToolButton）：跟上面几个按钮同一套 QSS，
         # 高度 / 内边距完全一致，倒三角也不会压在文字上。
-        self._more_button = button("更多名单操作", None, "MenuButton",
+        self._more_button = button("更多操作", None, "MenuButton",
                                    "粘贴文本导入 / 导出名单 / 名单模板")
         more_menu = QMenu(self)
         more_menu.addAction("粘贴文本导入…", self._on_text_import)
@@ -281,7 +281,7 @@ class StudentPanel(ProjectPanel):
     def _update_stats(self) -> None:
         total = len(self._project.students)
         assigned = len([sid for sid in self._project.assignment.values() if sid])
-        text = "共 %d 人 · 已分配 %d" % (total, assigned)
+        text = "共 %d 人 · 已入座 %d" % (total, assigned)
         shown = self._model.rowCount()
         if shown != total:
             text += " · 筛选出 %d 人" % shown

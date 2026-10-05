@@ -69,7 +69,7 @@ class SolverProgressDialog(QDialog):
         self._score_label = QLabel("—")
         self._elapsed_label = QLabel("0.0 秒")
         form.addRow("已重启次数", self._restart_label)
-        form.addRow("当前软约束得分", self._score_label)
+        form.addRow("当前方案满意度", self._score_label)
         form.addRow("已用时", self._elapsed_label)
         root.addLayout(form)
         root.addStretch(1)

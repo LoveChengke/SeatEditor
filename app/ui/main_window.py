@@ -182,14 +182,14 @@ class MainWindow(QMainWindow):
 
         self.right_tabs = QTabWidget(self)
         self.right_tabs.setObjectName("Panel")
-        self.right_tabs.addTab(self.rule_panel, "规则")
-        self.right_tabs.addTab(self.selection_panel, "选区")
-        self.right_tabs.addTab(self.rotation_panel, "轮换")
-        self.right_tabs.setTabToolTip(0, "排位规则：谁要坐哪里（先看这一页）")
-        self.right_tabs.setTabToolTip(1, "选区：把若干座位存成一组，供规则 / 批量操作用")
-        self.right_tabs.setTabToolTip(2, "轮换：按周整体换座（可选）")
+        self.right_tabs.addTab(self.rule_panel, "排座规则")
+        self.right_tabs.addTab(self.selection_panel, "常用区域")
+        self.right_tabs.addTab(self.rotation_panel, "定期换座")
+        self.right_tabs.setTabToolTip(0, "排座规则：谁坐哪里（先看这一页）")
+        self.right_tabs.setTabToolTip(1, "常用区域：把讲台边、靠窗这些座位存成一组，加规则或批量操作时直接选用")
+        self.right_tabs.setTabToolTip(2, "定期换座：每隔一段时间整班轮换（可选）")
 
-        self.right_dock = QDockWidget("规则与选区", self)
+        self.right_dock = QDockWidget("排座规则与区域", self)
         self.right_dock.setObjectName("RightDock")
         self.right_dock.setWidget(self.right_tabs)
         self.right_dock.setMinimumWidth(PANEL_RULE_WIDTH - 30)
@@ -203,6 +203,7 @@ class MainWindow(QMainWindow):
         self.resizeDocks([self.right_dock], [PANEL_RULE_WIDTH + 40], Qt.Orientation.Horizontal)
 
         self.rule_panel.rules_changed.connect(self._on_rules_changed)
+        self.rule_panel.ai_requested.connect(self.show_ai_rule_dialog)
         self.selection_panel.apply_requested.connect(self._on_selection_apply)
         self.selection_panel.selection_created.connect(self._on_selection_created)
         self.selection_panel.selection_deleted.connect(self._on_selection_deleted)
@@ -243,8 +244,8 @@ class MainWindow(QMainWindow):
         self.act_import = action("导入学生名单…", "Ctrl+I", self.import_excel, "从 Excel 导入名单", icon_name="import")
         self.act_import_text = action("粘贴文本导入名单…", "", self.import_text, "从剪贴板/文本框批量粘贴「学号 姓名」", icon_name="import")
         self.act_roster_template = action(
-            "下载名单导入模板…", "", self.save_roster_template,
-            "生成 Excel 名单模板（含填写说明与示例），填好后可直接导入",
+            "生成名单模板（Excel）…", "", self.save_roster_template,
+            "生成一份带填写说明的 Excel 模板，填好后可直接导入",
         )
         self.act_export_excel = action("导出座位表 (Excel)…", "Ctrl+E", self.export_seat_table, "导出带讲台与过道的座位表", icon_name="export")
         self.act_export_png = action("导出座位表 (PNG)…", "Ctrl+Shift+E", self.export_png, "导出座位表图片", icon_name="export")
@@ -256,18 +257,19 @@ class MainWindow(QMainWindow):
         # 重做给两个快捷键：Ctrl+Y 是 Windows 习惯，但常被输入法 / 截图工具等
         # 全局热键吞掉；Ctrl+Shift+Z 是浏览器与 macOS 的习惯，留一条后路。
         self.act_redo.setShortcuts([QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")])
-        self.act_clear_seats = action("清空选中座位", "Delete", self._clear_selected, "把选中的学生移回未分配池")
-        self.act_toggle_disabled = action("设为 / 取消空置", "Ctrl+D", self._toggle_selected_disabled, "空置座位不参与排位")
+        self.act_clear_seats = action("清空选中座位", "Delete", self._clear_selected, "把选中的学生移回名单")
+        self.act_toggle_disabled = action("留空 / 取消留空", "Ctrl+D", self._toggle_selected_disabled, "留空的座位排位时不安排学生")
         self.act_select_all = action("全选座位", "Ctrl+A", self._select_all_seats, "选中全部座位")
-        self.act_assign_pending = action("把选中学生放入空座位", "", self._assign_pending_auto, "把名单里选中的学生依次放进空座位")
-        self.act_lock_seats = action("锁定选中座位", "Ctrl+L", self._lock_selected, "排位时保持这些座位不变")
-        self.act_unlock_seats = action("解除全部锁定", "Ctrl+Shift+L", self._unlock_seats, "取消所有座位锁定")
+        self.act_assign_pending = action("让选中的学生依次入座", "", self._assign_pending_auto, "把名单里选中的学生依次放进空座位")
+        self.act_lock_seats = action("固定选中座位", "Ctrl+L", self._lock_selected, "排位时这几个座位不动")
+        self.act_unlock_seats = action("取消全部固定", "Ctrl+Shift+L", self._unlock_seats, "取消所有固定不变的座位")
 
         self.act_layout = action("教室布局…", "Ctrl+B", self.edit_layout, "配置分组、行列、组间距与讲台方向", icon_name="layout")
         self.act_solve = action("一键排位", "F5", self.solve, "按规则自动排座位", icon_name="solve")
         self.act_solve_again = action("换一批", "Ctrl+R", self.solve, "重新搜索另一个方案", icon_name="solve")
-        self.act_report = action("查看排位报告", "", self.show_report, "查看硬约束满足情况与软约束得分", icon_name="report")
-        self.act_clear_all = action("清空全部座位", "", self.clear_all_seats, "把所有学生移回未分配池")
+        self.act_ai_rules = action("AI 大白话排位…", "", self.show_ai_rule_dialog, "用一句话描述要求，AI 转成排座规则，确认后自动排位")
+        self.act_report = action("查看排位结果", "", self.show_report, "看看哪些要求做到了、整体排得怎么样", icon_name="report")
+        self.act_clear_all = action("清空全部座位", "", self.clear_all_seats, "把所有学生移回名单，重新排")
 
         self.act_tags = action("标签管理…", "Ctrl+T", self.manage_tags, "新增 / 重命名 / 删除标签与配色")
 
@@ -279,7 +281,7 @@ class MainWindow(QMainWindow):
         self.act_show_title.setCheckable(True)
         self.act_show_title.setChecked(True)
         self.act_show_title.toggled.connect(self._on_show_title)
-        self.act_show_selection = QAction("显示选区高亮", self)
+        self.act_show_selection = QAction("显示区域高亮", self)
         self.act_show_selection.setCheckable(True)
         self.act_show_selection.setChecked(True)
         self.act_show_selection.toggled.connect(self._on_show_selection)
@@ -296,6 +298,7 @@ class MainWindow(QMainWindow):
             self.size_actions.addAction(act)
             self.act_size[name] = act
 
+        self.act_tour = action("新手引导", "", self.show_onboarding, "四步上手：布局 → 名单 → 规则 → 排位导出")
         self.act_help = action("快捷键与使用说明", "F1", self.show_help, "查看快捷键与上手步骤")
         self.act_about = action("关于", "", self.show_about, "关于本程序")
 
@@ -350,11 +353,13 @@ class MainWindow(QMainWindow):
         menu_seat = bar.addMenu("排位(&S)")
         menu_seat.addAction(self.act_solve)
         menu_seat.addAction(self.act_solve_again)
+        menu_seat.addAction(self.act_ai_rules)
         menu_seat.addAction(self.act_report)
         menu_seat.addSeparator()
         menu_seat.addAction(self.act_clear_all)
 
         menu_help = bar.addMenu("帮助(&H)")
+        menu_help.addAction(self.act_tour)
         menu_help.addAction(self.act_help)
         menu_help.addAction(self.act_about)
         self._install_header(bar)
@@ -441,7 +446,7 @@ class MainWindow(QMainWindow):
     def _update_status(self) -> None:
         layout = self.project.layout
         assigned = len([v for v in self.project.assignment.values() if v])
-        text = "座位 %d（空置 %d） · 学生 %d · 已分配 %d · 未分配 %d" % (
+        text = "座位 %d（留空 %d） · 学生 %d · 已入座 %d · 未入座 %d" % (
             layout.seat_count(),
             len(layout.disabled_seats),
             len(self.project.students),
@@ -449,7 +454,7 @@ class MainWindow(QMainWindow):
             max(0, len(self.project.students) - assigned),
         )
         if self._locked_seats:
-            text += " · 已锁定 %d 座位" % len(self._locked_seats)
+            text += " · 已固定 %d 个座位" % len(self._locked_seats)
         self.lbl_summary.setText(text)
         if self._conflicts:
             first = next(iter(self._conflicts.values()))
@@ -631,10 +636,10 @@ class MainWindow(QMainWindow):
             self.student_panel.clear_selection()
             if self.student_panel.assign_filter() == ASSIGN_UNASSIGNED:
                 # 「未分配」筛选下入座后该行会被筛掉，这里说清楚，免得像学生丢了
-                self.toast("已入座；当前筛选是「未分配」，该学生已从名单移出", 6000)
+                self.toast("已入座；当前筛选是「未入座」，该学生暂时从名单里隐藏", 6000)
 
     def unassign_seat(self, seat_key: str) -> None:
-        """把座位上的学生拖回名单 = 取消入座（回到未分配池）。"""
+        """把座位上的学生拖回名单 = 取消入座。"""
         coord = try_parse_key(seat_key)
         if coord is None:
             return
@@ -663,15 +668,15 @@ class MainWindow(QMainWindow):
             act.setEnabled(False)
         if self._pending_sids:
             menu.addAction(
-                "放入选中学生（%d 人）" % len(self._pending_sids),
+                "让选中的学生入座（%d 人）" % len(self._pending_sids),
                 lambda: self.assign_student(self._pending_sids[0], coord),
             )
         menu.addSeparator()
         disabled = self.project.layout.is_disabled(coord)
-        act_dis = menu.addAction("取消空置" if disabled else "设为空置")
+        act_dis = menu.addAction("取消留空" if disabled else "留空（不排人）")
         act_dis.triggered.connect(lambda: self.toggle_disabled_seats([coord]))
         locked = coord in self._locked_seats
-        act_lock = menu.addAction("解除锁定" if locked else "锁定该座位")
+        act_lock = menu.addAction("取消固定" if locked else "固定该座位")
         act_lock.triggered.connect(lambda: self._toggle_lock(coord))
         menu.addSeparator()
         label = "第 %d 组 第 %d 排 第 %d 列" % (coord[0] + 1, coord[1] + 1, coord[2] + 1)
@@ -690,7 +695,7 @@ class MainWindow(QMainWindow):
             self.toast("无效的座位")
             return False
         if self.project.layout.is_disabled(coord):
-            self.toast("该座位已设为空置，请先取消空置")
+            self.toast("该座位已留空，请先取消留空")
             return False
         old_key = seat_key_of(self.project.assignment, sid)
         occupant = self.project.assignment.get(make_key(coord), "")
@@ -714,7 +719,7 @@ class MainWindow(QMainWindow):
         if a is None or b is None or a == b:
             return False
         if self.project.layout.is_disabled(a) or self.project.layout.is_disabled(b):
-            self.toast("空置座位不参与交换")
+            self.toast("留空的座位不参与交换")
             return False
         sid_a = self.project.assignment.get(make_key(a), "")
         sid_b = self.project.assignment.get(make_key(b), "")
@@ -750,14 +755,14 @@ class MainWindow(QMainWindow):
         self.project.notify(EV_ASSIGNMENT)
         self.grid.refresh(coords)
         self._after_change(*coords)
-        self.toast("已清空 %d 个座位，学生回到未分配池" % len(removed))
+        self.toast("已清空 %d 个座位，学生回到名单" % len(removed))
         return len(removed)
 
     def clear_all_seats(self) -> None:
         if not any(self.project.assignment.values()):
             self.toast("当前没有已分配的座位")
             return
-        if not self._confirm("确定要清空全部座位吗？所有学生将回到未分配池。"):
+        if not self._confirm("确定要清空全部座位吗？所有学生将回到名单。"):
             return
         self._push_history("清空全部座位")
         seats = [try_parse_key(k) for k in list(self.project.assignment)]
@@ -773,7 +778,7 @@ class MainWindow(QMainWindow):
         if not coords:
             return
         target = not all(self.project.layout.is_disabled(c) for c in coords)
-        self._push_history("设为空置" if target else "取消空置")
+        self._push_history("设为留空" if target else "取消留空")
         for coord in coords:
             self.project.layout.set_disabled(coord, target)
             if target:
@@ -783,7 +788,7 @@ class MainWindow(QMainWindow):
         self.project.notify(EV_ASSIGNMENT)
         self.grid.refresh(coords)
         self._update_conflicts(coords)
-        self.toast("已把 %d 个座位设为%s" % (len(coords), "空置" if target else "可用"))
+        self.toast("已把 %d 个座位设为%s" % (len(coords), "留空" if target else "可用"))
 
     def batch_assign(self, seats: Sequence) -> None:
         coords = sorted(
@@ -854,7 +859,7 @@ class MainWindow(QMainWindow):
     def _lock_selected(self) -> None:
         seats = self._selected_seats()
         if not seats:
-            self.toast("请先选择要锁定的座位")
+            self.toast("请先选择要固定的座位")
             return
         self._locked_seats |= set(seats)
         self.grid.set_locked_seats(self._locked_seats)
@@ -1223,7 +1228,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "还没有学生", "请先导入或添加学生名单，再执行一键排位。")
             return
         if self.project.layout.available_count() == 0:
-            QMessageBox.warning(self, "没有可用座位", "所有座位都被设为空置了，请先取消部分空置座位。")
+            QMessageBox.warning(self, "没有可用座位", "所有座位都被留空了，请先取消部分留空座位。")
             return
         from .dialogs.solver_progress_dialog import SolverProgressDialog
 
@@ -1267,6 +1272,26 @@ class MainWindow(QMainWindow):
         from .dialogs.conflict_report_dialog import ConflictReportDialog
 
         ConflictReportDialog(solution, self.project, self).exec()
+
+    def show_ai_rule_dialog(self) -> None:
+        """AI 大白话排位：对话框产出规则草稿，这里落库并按需接着排位。"""
+        from .dialogs.ai_rule_dialog import AIRuleDialog
+
+        dialog = AIRuleDialog(self.project, self)
+        dialog.exec()
+        if not dialog.result_rules:
+            return
+        added = 0
+        for rule in dialog.result_rules:
+            if self.project.add_rule(rule):
+                added += 1
+        if added == 0:
+            self._warn("规则没有添加成功（可能与已有规则重复）。")
+            return
+        self._on_rules_changed()
+        self.toast("已添加 %d 条 AI 规则" % added)
+        if dialog.solve_after:
+            self.solve()
 
     def _on_rules_changed(self) -> None:
         self.rule_panel.refresh()
@@ -1568,11 +1593,42 @@ class MainWindow(QMainWindow):
             return 0.0
 
     def _maybe_welcome(self) -> None:
+        """首次启动弹「开始引导」；用户勾了「不再显示」之后才不再弹。"""
         settings = self._settings()
         if settings.value(config.SK_WELCOME_SHOWN, False, type=bool):
             return
-        settings.setValue(config.SK_WELCOME_SHOWN, True)
-        self.show_help()
+        self.show_onboarding()
+
+    def show_onboarding(self) -> None:
+        """四步上手引导；步骤按钮直接跳到对应操作，可从「帮助」菜单随时重看。"""
+        from .dialogs.onboarding_dialog import OnboardingDialog
+
+        def go_rules() -> None:
+            self.right_dock.show()
+            self.right_tabs.setCurrentIndex(0)
+            self.right_dock.raise_()
+
+        steps = (
+            ("设置教室布局",
+             "教室分几组、几排、几列。点顶部「教室布局」，选个模板就行。",
+             "去设置布局", self.edit_layout),
+            ("导入学生名单",
+             "选 Excel 文件一键导入；没有 Excel 也可以在左侧名单里点「添加」手动输入。",
+             "导入名单", self.import_excel),
+            ("挑几条排座规则",
+             "比如「视力差的坐前排」。不挑也行，程序会按姓名顺序直接排。",
+             "去看看", go_rules),
+            ("一键排位并导出",
+             "按 F5 自动排好，拖一拖微调，满意就导出 Excel 或图片发给班主任群。",
+             "一键排位", self.solve),
+        )
+        dialog = OnboardingDialog(self, steps)
+        dialog.exec()
+        if dialog.dont_show_again():
+            self._settings().setValue(config.SK_WELCOME_SHOWN, True)
+        action = dialog.taken_action()
+        if action is not None:
+            QTimer.singleShot(0, action)
 
     # 设置
     def _restore_settings(self) -> None:
@@ -1691,7 +1747,7 @@ class MainWindow(QMainWindow):
             "<tr><td>在名单里选中学生 → 点击空座位</td><td>学生入座</td></tr>"
             "<tr><td>从座位拖到另一个座位</td><td>两人交换 / 移动到空位</td></tr>"
             "<tr><td>在空白处拖拽框选 / Ctrl+点击</td><td>选择多个座位</td></tr>"
-            "<tr><td>右键座位</td><td>清空 / 空置 / 锁定 / 编辑学生</td></tr>"
+            "<tr><td>右键座位</td><td>清空 / 留空 / 固定 / 编辑学生</td></tr>"
             "<tr><td>悬停座位</td><td>查看学生完整信息</td></tr>"
             "</table>"
         ) % steps

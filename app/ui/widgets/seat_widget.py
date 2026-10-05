@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PyQt6.QtCore import (
     QEvent,
     QPoint,
+    QPointF,
     QRect,
     QRectF,
     QSize,
@@ -18,7 +19,7 @@ from PyQt6.QtCore import (
     QTimer,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QDrag, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QColor, QDrag, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 
 from ..dnd import MIME_SEAT, MIME_STUDENT, decode_seat, decode_students, seat_mime
@@ -31,6 +32,14 @@ from ..style.theme import (
 )
 
 HOVER_DELAY_MS = 400
+
+
+def _card_gradient(base: QColor, rect: QRectF) -> QLinearGradient:
+    """卡片底色的竖向渐变：顶部比底部亮约 18%，做出一层看得见的立体感。"""
+    gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+    gradient.setColorAt(0.0, base.lighter(118))
+    gradient.setColorAt(1.0, base)
+    return gradient
 
 
 class SeatHoverCard(QFrame):
@@ -230,18 +239,23 @@ class SeatWidget(QFrame):
         path = QPainterPath()
         path.addRoundedRect(rect, float(self._radius), float(self._radius))
 
-        # 背景
+        # 背景：顶部一线微亮的渐变，卡片才像「浮」在画布上而不是贴片。
+        # 选中 / 冲突同样走渐变，五种状态质感一致。
         if self._disabled:
             background = QColor(Color.SEAT_DISABLED)
+            painter.fillPath(path, background)
         elif self._conflict:
             background = QColor(Color.SEAT_CONFLICT)
+            painter.fillPath(path, _card_gradient(background, rect))
         elif self._selected:
             background = QColor(Color.SEAT_SELECTED)
+            painter.fillPath(path, _card_gradient(background, rect))
         elif self._highlight or self._hover:
             background = QColor(Color.SEAT_HOVER)
+            painter.fillPath(path, _card_gradient(background, rect))
         else:
             background = QColor(Color.SEAT_DEFAULT)
-        painter.fillPath(path, background)
+            painter.fillPath(path, _card_gradient(background, rect))
 
         # 左侧标签色条
         if self._tag_color and self._student is not None and not self._disabled:
@@ -288,7 +302,7 @@ class SeatWidget(QFrame):
             TAG_STRIPE_WIDTH + 4 if self._tag_color else 4, 2, -4, -2
         )
         if self._disabled:
-            self._draw_text(painter, "空置", text_rect, Color.TEXT_DISABLED, FONT_SEAT_SID, center=True)
+            self._draw_text(painter, "留空", text_rect, Color.TEXT_DISABLED, FONT_SEAT_SID, center=True)
         elif self._student is not None:
             show_sid = self._show_sid and self._height >= 48
             name_rect = QRect(text_rect)
@@ -301,27 +315,61 @@ class SeatWidget(QFrame):
             if show_sid:
                 self._draw_text(painter, self._student.sid_tail(4), sid_rect,
                                 Color.TEXT_SECONDARY, FONT_SEAT_SID, center=True)
+        else:
+            self._draw_empty_hint(painter)
 
         # 冲突角标
         if self._conflict:
-            painter.setPen(QColor(Color.DANGER))
-            font = QFont()
-            font.setPointSize(9)
-            font.setBold(True)
-            painter.setFont(font)
-            painter.drawText(
-                QRect(self.width() - 16, 1, 14, 14),
-                int(Qt.AlignmentFlag.AlignCenter),
-                "⚠",
-            )
+            self._draw_conflict_badge(painter)
         # 锁定角标
         if self._locked:
-            font = QFont()
-            font.setPointSize(8)
-            painter.setFont(font)
-            painter.setPen(QColor(Color.PRIMARY))
-            painter.drawText(QRect(2, 1, 14, 13), int(Qt.AlignmentFlag.AlignCenter), "🔒")
+            self._draw_lock_badge(painter)
         painter.end()
+
+    def _draw_empty_hint(self, painter: QPainter) -> None:
+        """空座（未空置、无人）画一个淡淡的加号：提示这里可以拖 / 放学生。"""
+        painter.save()
+        pen = QPen(QColor(Color.SEAT_EMPTY_TXT))
+        pen.setWidthF(1.5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        cx, cy = self.width() / 2.0, self.height() / 2.0
+        arm = max(5.0, min(self._width, self._height) / 6.0)
+        painter.drawLine(QPointF(cx - arm, cy), QPointF(cx + arm, cy))
+        painter.drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm))
+        painter.restore()
+
+    def _draw_conflict_badge(self, painter: QPainter) -> None:
+        """右上角实心圆 + 感叹号。不用 ⚠ 字形：微软雅黑对符号字支持不稳。"""
+        painter.save()
+        badge = QRectF(self.width() - 21, 5, 14, 14)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(Color.DANGER))
+        painter.drawEllipse(badge)
+        pen = QPen(QColor(Color.DANGER_BG))
+        pen.setWidthF(2.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        cx = badge.center().x()
+        painter.drawLine(QPointF(cx, badge.top() + 3.5), QPointF(cx, badge.top() + 7.5))
+        painter.drawPoint(QPointF(cx, badge.bottom() - 3.2))
+        painter.restore()
+
+    def _draw_lock_badge(self, painter: QPainter) -> None:
+        """左上角小挂锁（锁身 + 锁梁）。同理不用 🔒 emoji。"""
+        painter.save()
+        pen = QPen(QColor(Color.PRIMARY))
+        pen.setWidthF(1.4)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # 锁梁：半圆
+        painter.drawArc(QRectF(6.5, 3.5, 7, 7), 0, 180 * 16)
+        # 锁身：圆角小块
+        painter.setBrush(QColor(Color.PRIMARY))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(QRectF(5, 7.5, 10, 7), 2, 2)
+        painter.restore()
 
     def _draw_text(
         self,

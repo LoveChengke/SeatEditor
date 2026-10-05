@@ -64,7 +64,9 @@ class TagChip(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         rect = self.rect().adjusted(0, 0, -1, -1)
         path = QPainterPath()
-        path.addRoundedRect(float(rect.x()), float(rect.y()), float(rect.width()), float(rect.height()), 8.0, 8.0)
+        # 全圆角胶囊：半径 = 高度一半
+        path.addRoundedRect(float(rect.x()), float(rect.y()), float(rect.width()), float(rect.height()),
+                            float(rect.height()) / 2.0, float(rect.height()) / 2.0)
         fill = QColor(self._color)
         fill.setAlpha(48)
         painter.fillPath(path, fill)

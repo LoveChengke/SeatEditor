@@ -60,7 +60,7 @@ class RuleEditDialog(QDialog):
             if spec is None:
                 continue
             self._kind_combo.addItem(
-                ("硬约束 · " if spec.is_hard else "软约束 · ") + spec.label, kind
+                ("必须满足 · " if spec.is_hard else "尽量满足 · ") + spec.label, kind
             )
         if self.rule is not None:
             index = self._kind_combo.findData(self.rule.kind)
@@ -92,7 +92,7 @@ class RuleEditDialog(QDialog):
         self._weight_spin.setSingleStep(0.1)
         self._weight_spin.setDecimals(2)
         self._weight_spin.setValue(float(getattr(self.rule, "weight", 1.0) or 1.0))
-        self._weight_label = QLabel("权重")
+        self._weight_label = QLabel("重要程度")
         tail.addRow(self._weight_label, self._weight_spin)
         self._enabled_check = QCheckBox("启用该规则")
         self._enabled_check.setChecked(bool(getattr(self.rule, "enabled", True)))

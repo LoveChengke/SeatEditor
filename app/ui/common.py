@@ -124,8 +124,10 @@ class CollapsibleSection(QWidget):
         root.addWidget(self._body)
 
     def _header_text(self) -> str:
-        # 用中文而不是 ▶ / ▼：微软雅黑里没有这两个几何符号，会渲染成方框
-        return "%s（%s）" % (self._title, "收起" if self._toggle.isChecked() else "展开")
+        # 用中文而不是 ▶ / ▼：微软雅黑里没有这两个几何符号，会渲染成方框。
+        # 分隔用「·」而不是再套一层括号——标题自带「（可选）」这类后缀时，
+        # 「附加表格（可选）（展开）」连着两个括号很累赘。
+        return "%s · %s" % (self._title, "收起" if self._toggle.isChecked() else "展开")
 
     def _on_toggled(self, checked: bool) -> None:
         self._body.setVisible(bool(checked))

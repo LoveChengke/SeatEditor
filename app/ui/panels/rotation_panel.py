@@ -28,7 +28,7 @@ MODE_COLS = "cols"
 MODE_CUSTOM = "custom"
 
 MODE_ITEMS = (
-    ("区域轮换", MODE_REGION),
+    ("定期换座", MODE_REGION),
     ("按排平移", MODE_ROWS),
     ("按列平移", MODE_COLS),
     ("自定义向量", MODE_CUSTOM),
@@ -101,7 +101,7 @@ class RotationPanel(ProjectPanel):
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
         action_row.addWidget(button("预览", self._on_preview, "Primary", "生成轮换方案（不修改座位）"))
-        action_row.addWidget(button("应用轮换", self._on_apply, tooltip="把预览方案写入座位表并记入历史"))
+        action_row.addWidget(button("应用换座", self._on_apply, tooltip="把预览方案写入座位表并记入历史"))
         form.addLayout(action_row)
 
         self._info_label = QLabel("")
@@ -129,7 +129,7 @@ class RotationPanel(ProjectPanel):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        hint = QLabel("勾选 2 个以上选区，学生按顺序整体轮换到下一个区域。")
+        hint = QLabel("勾选 2 个以上区域，学生按顺序整体换到下一个区域。比如每周换一次。")
         hint.setObjectName("Hint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -188,7 +188,7 @@ class RotationPanel(ProjectPanel):
         self._plan = None
 
     def refresh(self) -> None:
-        """按项目重建选区列表与轮换历史。"""
+        """按项目重建区域列表与换座历史。"""
         if self._project is None:
             return
         self._plan = None
@@ -202,7 +202,7 @@ class RotationPanel(ProjectPanel):
             self._selection_list.clear()
             selections = list(self._project.selections)
             if not selections:
-                empty = QListWidgetItem("暂无选区，请先在「选区」页创建")
+                empty = QListWidgetItem("暂无区域，请先在「常用区域」页创建")
                 empty.setFlags(Qt.ItemFlag.NoItemFlags)
                 self._selection_list.addItem(empty)
                 self._checked_ids = set()
@@ -218,7 +218,7 @@ class RotationPanel(ProjectPanel):
                 self._selection_list.addItem(item)
             self._checked_ids &= {selection.id for selection in selections}
         except Exception as exc:  # 刷新失败不应崩溃
-            self._set_info("选区列表刷新失败：%s" % exc, error=True)
+            self._set_info("区域列表刷新失败：%s" % exc, error=True)
         finally:
             self._populating = False
 
@@ -296,7 +296,7 @@ class RotationPanel(ProjectPanel):
             if mode == MODE_REGION:
                 selection_ids = self._checked_selection_ids()
                 if len(selection_ids) < 2:
-                    self._set_info("区域轮换至少需要勾选 2 个选区。", error=True)
+                    self._set_info("定期换座至少要勾选 2 个区域。", error=True)
                     return None
                 return self._service.region_rotate(selection_ids, options)
             if mode == MODE_ROWS:
@@ -331,7 +331,7 @@ class RotationPanel(ProjectPanel):
             self._warn("请先点击「预览」生成轮换方案。")
             return
         plan = self._plan
-        if not self._confirm("确定应用该轮换方案吗？\n%s" % (plan.description or ""), "应用轮换"):
+        if not self._confirm("确定应用该轮换方案吗？\n%s" % (plan.description or ""), "应用换座"):
             return
         self.apply_requested.emit(plan)
 
@@ -341,7 +341,7 @@ class RotationPanel(ProjectPanel):
         if week is None:
             self._warn("暂无轮换记录可回退。")
             return
-        if not self._confirm("确定回退到第 %d 周的座位方案吗？" % int(week), "回退轮换"):
+        if not self._confirm("确定回退到第 %d 周的座位方案吗？" % int(week), "撤销这次换座"):
             return
         self.rollback_requested.emit(int(week))
 

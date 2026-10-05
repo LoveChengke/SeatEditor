@@ -18,7 +18,7 @@
   收口）并在 `main.py` 里 `showMaximized()` 启动；对话框构造完调一次
   `common.fit_to_screen(self)`。**任何菜单的 `sizeHint().height()` 都要小于屏幕
   可用高度**——一屏放不下的菜单在高 DPI 下会直接顶出屏幕（规则菜单因此拆成
-  硬约束 / 软约束两个子菜单）。
+  「必须满足类 / 尽量满足类」两个子菜单）。
 * 主题是**深色**（近黑底 + 亮蓝强调色）：启动时由 `theme.apply_dark_theme(app)`
   统一装调色板、QSS 与字体，不要在各处再调 `setStyleSheet` / `setPalette`。
   QSS 里的图片路径写占位符 `@ASSET_DIR@`（`app/ui/__init__.py:load_stylesheet`
@@ -146,6 +146,9 @@ class TagFlow(QWidget):
 | `dialogs/student_edit_dialog.py` | `StudentEditDialog` | `(project, student=None, parent=None)` | `.result_student: Student`（接受时已 `ensure_tag`） |
 | `dialogs/tag_manager_dialog.py` | `TagManagerDialog` | `(project, parent=None)` | 直接改 `project.tags`（允许） |
 | `dialogs/text_import_dialog.py` | `TextImportDialog` | `(project, parent=None)` | `.students: list[Student]` |
+| `dialogs/onboarding_dialog.py` | `OnboardingDialog` | `(parent=None, steps=None)` | `.dont_show_again()`、`.taken_action()`（步骤回调由主窗口注入） |
+| `dialogs/ai_settings_dialog.py` | `AISettingsDialog` | `(endpoint, api_key, model, parent=None)` | `.result_config: (endpoint, api_key, model)` |
+| `dialogs/ai_rule_dialog.py` | `AIRuleDialog` | `(project, parent=None)` | `.result_rules: list[Rule]`、`.solve_after: bool` |
 
 要点：
 
@@ -153,17 +156,25 @@ class TagFlow(QWidget):
   `excel_io.FIELD_LABELS` 的全部字段 + 每个表头对应的 `attr:<名字>` 选项；
   默认值取 `preview.mapping`；底部复选框「跳过错误行继续导入」。
 * `SolverProgressDialog`：用 `QTimer` + `Solver.iterate(SOLVER_CHUNK)` 分片驱动
-  （见 `app/config.py` 的 `SOLVER_CHUNK`），显示进度条、已重启次数、当前软约束得分，
+  （见 `app/config.py` 的 `SOLVER_CHUNK`），显示进度条、已重启次数、当前方案满意度，
   提供「停止」按钮；关闭窗口等同于停止。求解完成后 `self.solution` 为 `Solution`。
   若 `Solver.prepare()` 抛 `SolverError`，用 `QMessageBox.warning` 提示并 `reject()`。
-* `ConflictReportDialog`：上半部分硬约束清单（✅/⚠️ + 明细），
-  下半部分软约束得分（总分 + 每条规则的进度条与权重）。
+* `ConflictReportDialog`：上半部分「必须满足」清单（✅/⚠️ + 明细），
+  下半部分「尽量满足」情况（总分 + 每条规则的进度条与重要程度）。
 * `RuleEditDialog`：表单**由 `rule.RULE_SPECS[kind].fields` 动态生成**，
   控件类型见 `app/models/rule.py` 的 `F_*` 常量；
   学生下拉显示「姓名（学号）」、数据为 sid；标签下拉取 `project.tag_names()`；
-  选区下拉取 `project.selections`；数值属性下拉取 `project.attr_names()`；
+  区域下拉取 `project.selections`；数值属性下拉取 `project.attr_names()`；
   座位下拉用「第 N 组 第 M 排 第 K 列」，数据为 `"g-r-c"`；
   「新增」时先用 `make_rule(kind)` 造默认规则；校验用 `rule.validate()`。
+* `AISettingsDialog`：服务商预设下拉（`config.AI_PRESETS`，切换自动填地址/模型）
+  + 接口地址 + 模型名 + API Key（密码框）+「测试连接」（真实发一个最小请求）。
+  确认后由调用方把 `result_config` 写入 QSettings 的 `SK_AI_ENDPOINT/SK_AI_API_KEY/SK_AI_MODEL`。
+* `AIRuleDialog`：大白话输入 → 经 `services/ai_client.py` 调 OpenAI 兼容接口
+  → `parse_rules_payload` 解析成规则草稿 → 每条勾选 + `describe_rule` 人话预览
+  + 「编辑」走 `RuleEditDialog` 微调。例外说明：AI 连接配置（`ai/*` 设置键）
+  不属于项目数据，本对话框直接读写 QSettings 以便「AI 设置…」即时生效。
+  关闭窗口即 abort 在途请求。
 * `LayoutEditorDialog`：左侧参数面板（组数、每组的行/列/组名/组间距、上下移动/删除、
   「添加分组」，以及「＋/− 一排 / 一列」的步进按钮）+ 右侧实时预览
   （用 `SeatGridView` 或简化的 `QGridLayout` 均可）；
@@ -209,14 +220,15 @@ class StudentPanel(QWidget):
 ```python
 class RulePanel(QWidget):
     rules_changed = pyqtSignal()
+    ai_requested = pyqtSignal()   # 大白话生成规则（AI）；主窗口负责打开对话框
     def __init__(self, project, parent=None) -> None: ...
     def refresh(self) -> None: ...
 ```
-内含：硬约束 / 软约束两个分组列表（`QListWidget`，每项带勾选框与「人话描述」），
+内含：必须满足 / 尽量满足两个分组列表（`QListWidget`，每项带勾选框与「人话描述」），
 工具栏「添加规则」（`QMenu`：第一项是 `自定义规则（向导）…`，其余 27 种规则按
-`HARD_KINDS` / `SOFT_KINDS` 拆成 `按类型添加：硬约束…` / `按类型添加：软约束…`
+`HARD_KINDS` / `SOFT_KINDS` 拆成 `按类型添加：必须满足类…` / `按类型添加：尽量满足类…`
 两个子菜单——单列 27 条会顶出屏幕）、「编辑」、「删除」、
-「上移/下移」（可选），软约束项显示权重。编辑走 `RuleEditDialog`，确认后
+「上移/下移」（可选），尽量满足项显示重要程度。编辑走 `RuleEditDialog`，确认后
 调用 `project.add_rule` / `project.remove_rule` / 直接改 `rule.params` 后 `project.notify("rules")`。
 
 ### `panels/selection_panel.py`
@@ -233,9 +245,9 @@ class SelectionPanel(QWidget):
     def refresh(self) -> None: ...
     def set_current_seats(self, seats: set) -> None: ...   # 来自座位表的当前选区
 ```
-内含：选区列表（名称 + 座位数 + 颜色块）、按钮「用当前选中座位新建选区」
+内含：区域列表（名称 + 座位数 + 颜色块）、按钮「把选中的座位存为区域」
 （弹 `QInputDialog` 取名字，发 `selection_created`）、「应用/高亮」、「重命名」、「删除」；
-批量操作（清空 / 设为空置 / 批量分配）与快捷选区（按分组 / 按行范围 / 按列范围 →
+批量操作（清空 / 留空 / 批量分配）与快捷区域（按分组 / 按排 / 按列 →
 发 `selection_created`）分别放进两个 `CollapsibleSection`，**默认收起**。
 
 ### `panels/rotation_panel.py`
@@ -247,20 +259,20 @@ class RotationPanel(QWidget):
     def __init__(self, project, parent=None) -> None: ...
     def refresh(self) -> None: ...
 ```
-内含：模式选择（区域轮换 / 按排平移 / 按列平移 / 自定义向量）、参数控件
-（选区多选、Δ排、Δ列）、「预览」按钮（用 `RotationService` 生成 `RotationPlan`）、
-「应用轮换」按钮、历史周列表（第 N 周 + 回退按钮）、以及 `plan.warnings` 的提示区。
+内含：模式选择（定期换座 / 按排平移 / 按列平移 / 自定义向量）、参数控件
+（区域多选、Δ排、Δ列）、「预览」按钮（用 `RotationService` 生成 `RotationPlan`）、
+「应用换座」按钮、历史周列表（第 N 周 + 回退按钮）、以及 `plan.warnings` 的提示区。
 `RotationService` 用法见 `app/services/rotation_service.py`。
 面板顶部要写一句「进阶功能」的说明，让只想排一次座的老师知道这页可以不管。
 
 ## 4. 主窗口（由主智能体实现）
 
 `app/ui/main_window.py` 的 `MainWindow(QMainWindow)` 负责：
-菜单栏 / 工具栏 / 三个 Dock（左：学生面板；右：规则面板 + 选区 + 轮换 Tab）/
+菜单栏 / 工具栏 / 三个 Dock（左：学生面板；右：规则面板 + 常用区域 + 定期换座 Tab）/
 中央 `SeatGridView` / 状态栏；文件（新建、打开、保存、另存为、最近文件、导出、
 自动保存与崩溃恢复）、编辑（撤销 `Ctrl+Z` / 重做 `Ctrl+Y`，另给 `Ctrl+Shift+Z` 兜底）、
-视图（显示学号、组标题、卡片尺寸、选区高亮）、排位（一键排位、换一批、锁定选中座位再排位、
-冲突报告）、轮换、帮助（快捷键说明、关于）。
+视图（显示学号、组标题、卡片尺寸、区域高亮）、排位（一键排位、换一批、AI 大白话排位、固定选中座位再排位、
+冲突报告）、定期换座、帮助（新手引导、快捷键说明、关于）。
 
 工具栏**只放一条主线**：打开 → 保存 → 教室布局 → 导入名单 → 一键排位 → 导出座位表 →
 撤销 / 重做；新建、粘贴导入、名单模板、排位报告等低频入口留在菜单里。

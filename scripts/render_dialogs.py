@@ -61,7 +61,10 @@ def main() -> int:
 
     apply_dark_theme(app)
 
+    from app.ui.dialogs.ai_rule_dialog import AIRuleDialog
+    from app.ui.dialogs.ai_settings_dialog import AISettingsDialog
     from app.ui.dialogs.export_dialog import ExportDialog
+    from app.ui.dialogs.onboarding_dialog import OnboardingDialog
     from app.ui.dialogs.layout_editor_dialog import LayoutEditorDialog
     from app.ui.dialogs.rule_edit_dialog import RuleEditDialog
     from app.ui.dialogs.rule_wizard_dialog import RuleWizardDialog
@@ -76,7 +79,42 @@ def main() -> int:
         ("student_edit", lambda: StudentEditDialog(project, project.students[0])),
         ("tag_manager", lambda: TagManagerDialog(project)),
         ("rule_wizard", lambda: RuleWizardDialog(project)),
+        # 开始引导：给四个步骤挂空回调，让「去设置布局」这类动作按钮也渲染出来
+        ("onboarding", lambda: OnboardingDialog(None, steps=(
+            ("设置教室布局", "教室分几组、几排、几列。点顶部「教室布局」，选个模板就行。",
+             "去设置布局", lambda: None),
+            ("导入学生名单", "选 Excel 文件一键导入；没有 Excel 也可以在左侧名单里点「添加」手动输入。",
+             "导入名单", lambda: None),
+            ("挑几条排座规则", "比如「视力差的坐前排」。不挑也行，程序会按姓名顺序直接排。",
+             "去看看", lambda: None),
+            ("一键排位并导出", "按 F5 自动排好，拖一拖微调，满意就导出 Excel 或图片发给班主任群。",
+             "一键排位", lambda: None),
+        ))),
     )
+    def _ai_rule_dialog():
+        """预填「已生成」状态：两条草稿规则 + 一条解析提示，便于走查完整 UI。"""
+        from app.services.ai_client import parse_rules_payload
+        import json as _json
+
+        dialog = AIRuleDialog(project)
+        dialog._input.setPlainText("视力差的坐前排\n班长分散开")
+        dialog._config_label.setText("当前 AI 服务：https://open.bigmodel.cn/api/paas/v4（glm-4-flash）")
+        payload = _json.dumps({"rules": [
+            {"kind": "front_required", "params": {"tag": "视力差", "rows": 2}},
+            {"kind": "tag_disperse", "params": {"tag": "班干部"}},
+            {"kind": "region_required", "params": {"tag": "需关注", "selection": "前排区"}},
+        ]})
+        rules, problems = parse_rules_payload(payload, project)
+        dialog._rebuild_results(rules)
+        dialog._set_problems("\n".join(problems), error=False)
+        return dialog
+
+    jobs = jobs + (
+        ("ai_settings", lambda: AISettingsDialog(
+            "https://open.bigmodel.cn/api/paas/v4", "sk-demo-key", "glm-4-flash")),
+        ("ai_rule", _ai_rule_dialog),
+    )
+
     for name, factory in jobs:
         dialog = factory()
         dialog.show()
