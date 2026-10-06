@@ -51,10 +51,7 @@ class RulePanel(ProjectPanel):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        title = QLabel("排位规则")
-        title.setObjectName("PanelTitle")
-        root.addWidget(title)
-
+        # 不再重复画标题：侧边栏页面头已经写着「排座规则」
         hint = QLabel("点「添加规则」挑几条要求（不挑也行）→ 按 F5 一键排位。\n"
                       "必须满足 = 一定要做到；尽量满足 = 做到了更好。")
         hint.setObjectName("Hint")

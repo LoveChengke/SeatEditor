@@ -12,6 +12,8 @@ APP_NAME = "教室座位编排"
 APP_ID = "ClassroomSeating"
 ORG_NAME = "ClassroomSeating"
 VERSION = "1.0"
+DEVELOPER = "Love_Chengke"
+PROJECT_URL = "github.com/LoveChengke/seateditor"
 
 # 文件
 PROJECT_EXT = ".seatproj"
@@ -24,6 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 RESOURCES_DIR = BASE_DIR / "resources"
 TEMPLATES_DIR = RESOURCES_DIR / "templates"
 ICONS_DIR = RESOURCES_DIR / "icons"
+# 应用图标：多尺寸 .ico 由 scripts/make_app_icon.py 从 app_icon*.svg 生成
+APP_ICON = RESOURCES_DIR / "app_icon.ico"
 
 # 算法参数
 HARD_PENALTY = 10000.0     # 单条硬约束违反的惩罚（远大于软约束权重之和）
@@ -40,7 +44,10 @@ AUTOSAVE_FILE = AUTOSAVE_DIR / "autosave.seatproj"
 
 # QSettings key
 SK_GEOMETRY = "window/geometry"
-SK_STATE = "window/state"
+# 键名带 v2：新版把左右两块面板收成「活动栏 + 一列侧边栏」并加了底部面板，
+# 老版本存的停靠布局里没有这些窗口，restoreState 会把新面板摆回旧位置，
+# 甚至直接把活动栏藏掉。换个键名让旧状态自然失效，别去猜怎么迁移。
+SK_STATE = "window/state_v2"
 SK_RECENT_FILES = "files/recent"
 SK_LAST_DIR = "files/last_dir"
 SK_LAST_PROJECT = "files/last_project"
@@ -49,6 +56,7 @@ SK_SHOW_GROUP_TITLE = "view/show_group_title"
 SK_CARD_SIZE = "view/card_size"
 SK_SHOW_SELECTION = "view/show_selection"
 SK_WELCOME_SHOWN = "welcome/shown"
+SK_THEME = "view/theme"        # "dark" | "light"
 SK_AI_ENDPOINT = "ai/endpoint"        # OpenAI 兼容接口地址（到 /v4 /v1 这级，不含 /chat/completions）
 SK_AI_API_KEY = "ai/api_key"
 SK_AI_MODEL = "ai/model"

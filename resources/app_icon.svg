@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- 教室座位编排：圆角方块底 + 讲台 + 3×2 座位网格，其中一个座位被点亮（排好的那个人）。
+       设计约束：16px 下也要认得出来 —— 所以只保留三种形状（底 / 讲台 / 座位），
+       元素少、边距大，缩放后不会糊成一团。颜色取自应用主色（#4C97FF → #2F6BFF）。 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.65" y2="1">
+      <stop offset="0" stop-color="#5AA0FF"/>
+      <stop offset="1" stop-color="#2450CC"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#bg)"/>
+
+  <!-- 讲台 -->
+  <rect x="86" y="56" width="84" height="24" rx="9" fill="#FFFFFF" fill-opacity="0.94"/>
+
+  <!-- 座位：3 列 2 排 -->
+  <g fill="#FFFFFF" fill-opacity="0.86">
+    <rect x="42" y="110" width="46" height="40" rx="12"/>
+    <rect x="105" y="110" width="46" height="40" rx="12"/>
+    <rect x="168" y="110" width="46" height="40" rx="12"/>
+    <rect x="42" y="166" width="46" height="40" rx="12"/>
+    <rect x="105" y="166" width="46" height="40" rx="12"/>
+  </g>
+
+  <!-- 被点亮的那一个：暖色 + 一个「人」的圆点，暗示「这个位置安排好了」 -->
+  <rect x="168" y="166" width="46" height="40" rx="12" fill="#FFC94D"/>
+  <circle cx="191" cy="182" r="6.5" fill="#1B3463"/>
+  <path d="M179.5 199.5a11.5 11.5 0 0 1 23 0z" fill="#1B3463"/>
+</svg>

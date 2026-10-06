@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..common import fit_to_screen, hline
+from ..common import polish_dialog, hline
 from ...models.student import Student
 from ...services.student_service import StudentService
 
@@ -32,7 +32,7 @@ class TextImportDialog(QDialog):
         self._build_ui()
         self._parse()
         self.adjustSize()
-        fit_to_screen(self)
+        polish_dialog(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

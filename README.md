@@ -1,11 +1,13 @@
 # 教室自动排座位程序（Classroom Seating Editor）
 
+<img src="docs/preview/app_icon.png" width="72" align="right" alt="应用图标">
+
 一款面向中小学班主任 / 任课教师的**单机桌面端**教室座位编排工具。
 
 配置教室布局 → 导入学生名单 → 用规则引擎一键排位 → 在可视化网格上拖拽微调 →
 一键导出 Excel / PNG 座位表。全部数据保存在本地 `.seatproj` 项目文件里，
 **无账号体系**；不接 AI 就完全离线——「AI 大白话排位」是可选增强，
-需要自己在「AI 设置」里填一份 OpenAI 兼容的大模型接口（地址 + Key），
+需要自己在「AI 设置」里填一份 OpenAI 兼容的大模型接口（地址 + Key，模型列表可一键拉取），
 使用时会把学生名单摘要发送给该服务。
 
 ---
@@ -171,15 +173,34 @@ python -m venv .venv
 
 ## 四、界面预览
 
-**主窗口**——左：名单；中：座位表；右：规则面板（42 人班级）
+**主窗口**——左：活动栏 + 侧边栏（名单）；中：座位表；底部：冲突 / 排位结果（42 人班级）
 
 ![主窗口](docs/preview/main_window.png)
+
+**白天模式**——点活动栏最下面的图标，或在「视图」菜单勾选
+
+![白天模式](docs/preview/main_window_light.png)
+
+**底部面板「冲突」**——列出没做到的「必须满足」，双击一条定位到座位
+
+![底部冲突页](docs/preview/bottom_conflicts.png)
+
+**底部面板「排位结果」**——排完位自动开到这里（不再弹模态窗）
+
+![排位结果](docs/preview/bottom_result.png)
+
+**自适应**——窗口变窄时按「座位表 > 侧边栏 > AI 面板」的次序让位，
+不会把座位表挤成一条缝：中窗收掉视图头摘要、矮窗收掉底部面板与紧凑图标
+
+![窄窗](docs/preview/main_window_narrow.png)
+
+![小窗](docs/preview/main_window_tiny.png)
 
 **座位表特写**——讲台、过道、标签色条、姓名 + 学号后 4 位
 
 ![座位表特写](docs/preview/seat_grid.png)
 
-**冲突高亮**——红框 + 暗红底 + 右上角 ⚠
+**冲突高亮**——红框 + 暗红底 + 右上角感叹标记
 
 ![冲突高亮](docs/preview/conflict_state.png)
 
@@ -189,7 +210,7 @@ python -m venv .venv
 
 > 以上图片由 `scripts/render_preview.py` 与 `scripts/grab_student_panel.py` 生成；
 > 对话框单独走查用 `scripts/render_dialogs.py`（输出到 `docs/preview/dialogs/`）。
-> 界面是深色主题（近黑底 + 亮蓝强调色），改完界面可随时重新渲染。
+> 界面有深色 / 白天两套配色，改完界面可随时重新渲染。
 
 ---
 
@@ -221,13 +242,19 @@ seateditor/
 │   │   └── roster_template.py     # 名单导入模板生成（名单 / 填写说明 / 示例 三张表）
 │   ├── ui/                        # 界面层
 │   │   ├── main_window.py         # 主窗口与全部业务编排
+│   │   ├── common.py              # IconButton / HeaderBar 等自绘骨架
+│   │   ├── motion.py              # 动效令牌与助手（beUI 指南）
 │   │   ├── dnd.py                 # 拖拽 MIME 载荷
-│   │   ├── widgets/               # SeatWidget / SeatGridView / 名单表格 / 标签胶囊
-│   │   ├── panels/                # 学生 / 规则 / 选区 / 轮换面板
+│   │   ├── widgets/               # 座位卡片 / 座位表 / 名单表格 / 活动栏 / 矢量图标 / 结果报告
+│   │   ├── panels/                # 学生 / 规则 / 选区 / 轮换 / AI 面板
 │   │   ├── dialogs/               # 布局、导入映射、导出、排位进度、冲突报告等
 │   │   └── style/                 # theme.py 设计常量 + app.qss 全局样式
 │   └── utils/                     # seat_key / natural_sort / pinyin
-├── resources/templates/           # 布局模板 JSON + 学生名单导入模板.xlsx（可直接增删）
+├── resources/
+│   ├── app_icon.svg / app_icon_small.svg  # 应用图标源文件（大 / 小尺寸构图）
+│   ├── app_icon.ico / app_icon.png        # 由 scripts/make_app_icon.py 生成
+│   ├── icons/                     # 界面里的线性图标（按主题重新着色）
+│   └── templates/                 # 布局模板 JSON + 学生名单导入模板.xlsx（可直接增删）
 ├── scripts/                       # 随包工具：生成名单模板、渲染界面截图
 └── docs/UI_CONTRACT.md            # 界面层接口契约（内部文档）
 ```
@@ -283,6 +310,9 @@ seateditor/
 ```powershell
 # 重新生成随包资源：resources/templates/学生名单导入模板.xlsx（并列出布局模板）
 .venv\Scripts\python.exe scripts\make_templates.py
+
+# 生成应用图标（改完 resources/app_icon*.svg 后重跑，出 .ico / .png 与预览图）
+.venv\Scripts\python.exe scripts\make_app_icon.py
 
 # 渲染界面截图（README「四、界面预览」的图片即由此生成）
 .venv\Scripts\python.exe scripts\render_preview.py

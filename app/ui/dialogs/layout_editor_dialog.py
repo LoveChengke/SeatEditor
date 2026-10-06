@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..common import CollapsibleSection, fit_to_screen, hline
+from ..common import CollapsibleSection, hline
 from ...models.layout import (
     CARD_SIZES, LAYOUT_TEMPLATES, MAX_COLS, MAX_GAP, MAX_GROUPS, MAX_ROWS, MIN_COLS,
     MIN_GAP, MIN_ROWS, PODIUM_SIDES, Layout, SeatGroup, template_layout,
@@ -326,7 +326,7 @@ class LayoutEditorDialog(QDialog):
         self._group_list.clear()
         for group in self._layout.groups:
             self._group_list.addItem(
-                QListWidgetItem("%s（%d 行 × %d 列）" % (group.name, group.rows, group.cols))
+                QListWidgetItem("%s（%d 排 × %d 列）" % (group.name, group.rows, group.cols))
             )
         count = self._group_list.count()
         index = 0 if select is None else int(select)
@@ -400,7 +400,7 @@ class LayoutEditorDialog(QDialog):
         group = self._group_at(row)
         item = self._group_list.item(row)
         if group is not None and item is not None:
-            item.setText("%s（%d 行 × %d 列）" % (group.name, group.rows, group.cols))
+            item.setText("%s（%d 排 × %d 列）" % (group.name, group.rows, group.cols))
 
     def _schedule_preview(self) -> None:
         timer = getattr(self, "_preview_timer", None)

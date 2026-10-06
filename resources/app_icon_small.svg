@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- 应用图标的「小尺寸」版：16 / 24 / 32px 用。
+       完整版（app_icon.svg）的 3×2 座位网格缩到 16px 会糊成一片（座位只有 2.9px、
+       间隙 0.9px，缩放后连不成形），所以小尺寸只保留三个大形状：
+       讲台（顶上一道白条）+ 一个座位 + 里面的人。这是图标集的标准做法——
+       小尺寸换构图，不换主题。 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.65" y2="1">
+      <stop offset="0" stop-color="#5AA0FF"/>
+      <stop offset="1" stop-color="#2450CC"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#bg)"/>
+
+  <!-- 讲台 -->
+  <rect x="63" y="46" width="130" height="30" rx="11" fill="#FFFFFF" fill-opacity="0.94"/>
+
+  <!-- 一个座位 + 坐在里面的人 -->
+  <rect x="63" y="108" width="130" height="102" rx="22" fill="#FFC94D"/>
+  <circle cx="128" cy="146" r="21" fill="#1B3463"/>
+  <path d="M92 199a36 36 0 0 1 72 0z" fill="#1B3463"/>
+</svg>

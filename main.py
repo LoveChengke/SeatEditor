@@ -62,8 +62,11 @@ def main(argv=None) -> int:
         )
         return 1
 
+    from PyQt6.QtCore import QSettings
+
+    from app.ui import install_app_icon
     from app.ui.main_window import MainWindow
-    from app.ui.style.theme import apply_dark_theme, apply_dark_titlebar
+    from app.ui.style.theme import apply_theme, apply_dark_titlebar, is_dark
 
     QApplication.setApplicationName(config.APP_NAME)
     QApplication.setApplicationDisplayName(config.APP_NAME)
@@ -71,16 +74,24 @@ def main(argv=None) -> int:
     QApplication.setApplicationVersion(config.VERSION)
 
     app = QApplication(argv)
-    apply_dark_theme(app)
+    theme_name = str(QSettings(config.ORG_NAME, config.APP_ID)
+                     .value(config.SK_THEME, "dark", type=str) or "dark")
+    apply_theme(app, dark=(theme_name != "light"))
+    # 图标要在窗口显示之前装好（Windows 的 AppUserModelID 尤其如此，
+    # 它决定任务栏按哪个程序的图标与分组显示）
+    install_app_icon(app)
+
+    from app.ui import motion
 
     window = MainWindow()
     for arg in argv[1:]:
         if arg.lower().endswith(config.PROJECT_EXT) and os.path.exists(arg):
             window.open_project(arg)
             break
+    motion.reveal_window(window)   # 启动内容揭示（最大化窗口只做淡入）
     # 启动即最大化：教室座位表越宽越好用，也避免小屏 / 高 DPI 下窗口超出屏幕
     window.showMaximized()
-    apply_dark_titlebar(window)
+    apply_dark_titlebar(window, is_dark())
     return app.exec()
 
 

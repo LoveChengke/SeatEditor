@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from PyQt6.QtCore import QEvent, QPoint, QRect, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -112,9 +113,14 @@ class SeatGridView(QWidget):
         self._root.setSpacing(0)
 
         self._rubber = QRubberBand(QRubberBand.Shape.Rectangle, self._canvas)
-        # rgba 里的 76,151,255 就是 Color.PRIMARY (#4C97FF)，QSS 之外无法引用常量
+        self._apply_rubber_theme()
+
+    def _apply_rubber_theme(self) -> None:
+        """框选橡皮筋按当前主题着色（rgba 三元数从 Color.PRIMARY 现算，QSS 外无法引用常量）。"""
+        color = QColor(Color.PRIMARY)
         self._rubber.setStyleSheet(
-            "QRubberBand { border: 1px dashed %s; background: rgba(76,151,255,45); }" % Color.PRIMARY
+            "QRubberBand { border: 1px dashed %s; background: rgba(%d,%d,%d,45); }"
+            % (Color.PRIMARY, color.red(), color.green(), color.blue())
         )
 
         self._podium_top: Optional[PodiumWidget] = None
@@ -302,6 +308,25 @@ class SeatGridView(QWidget):
 
     def select_all(self) -> None:
         self.set_selected(self._seat_widgets.keys())
+
+    def focus_seats(self, seats) -> None:
+        """选中这些座位，并把第一个滚进可视区（底部冲突列表双击定位用）。
+
+        只 ``set_selected`` 的话，冲突座位可能在视口外面，老师看不到反馈；
+        所以顺手滚一下。``ensureWidgetVisible`` 的边距是给卡片留出上下文，
+        别让目标卡贴死在视口边上。
+        """
+        coords = []
+        for item in seats or []:
+            coord = item if isinstance(item, tuple) and len(item) == 3 else try_parse_key(item)
+            if coord is not None:
+                coords.append((int(coord[0]), int(coord[1]), int(coord[2])))
+        if not coords:
+            return
+        self.set_selected(coords)
+        widget = self.widget_at(coords[0])
+        if widget is not None:
+            self._scroll.ensureWidgetVisible(widget, 60, 60)
 
     def clear_selection(self) -> None:
         self.set_selected([])

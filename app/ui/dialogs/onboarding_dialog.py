@@ -50,10 +50,13 @@ class OnboardingDialog(QDialog):
         subtitle.setWordWrap(True)
         root.addWidget(subtitle)
 
+        self._cards: List[QWidget] = []
         for index, (step_title, desc, action_text, callback) in enumerate(
             steps if steps is not None else DEFAULT_STEPS, start=1
         ):
-            root.addWidget(self._step_card(index, step_title, desc, action_text, callback))
+            card = self._step_card(index, step_title, desc, action_text, callback)
+            self._cards.append(card)
+            root.addWidget(card)
 
         root.addSpacing(4)
         footer = QHBoxLayout()
@@ -67,6 +70,12 @@ class OnboardingDialog(QDialog):
         start.clicked.connect(self.accept)
         footer.addWidget(start)
         root.addLayout(footer)
+
+        from .. import motion
+        from ..common import polish_dialog
+
+        polish_dialog(self)
+        motion.stagger_reveal(self._cards)
 
     # 界面
     def _step_card(self, index: int, title: str, desc: str,

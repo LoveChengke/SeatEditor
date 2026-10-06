@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ...config import AI_PRESETS
-from ..common import button, fit_to_screen, hline
+from ..common import button, polish_dialog, hline
 from ..style.theme import Color
 
 
@@ -56,9 +56,15 @@ class AISettingsDialog(QDialog):
         self._endpoint_edit.setPlaceholderText("https://api.example.com/v1")
         form.addRow("接口地址", self._endpoint_edit)
 
-        self._model_edit = QLineEdit(model)
-        self._model_edit.setPlaceholderText("如 glm-4-flash / deepseek-chat")
-        form.addRow("模型名称", self._model_edit)
+        self._model_combo = QComboBox()
+        self._model_combo.setEditable(True)
+        self._model_combo.lineEdit().setPlaceholderText("填模型名，或点「获取模型列表」自动拉取")
+        model_row = QHBoxLayout()
+        model_row.setSpacing(6)
+        model_row.addWidget(self._model_combo, 1)
+        self._fetch_button = button("获取模型列表", self._on_fetch_models)
+        model_row.addWidget(self._fetch_button)
+        form.addRow("模型名称", model_row)
 
         key_row = QHBoxLayout()
         key_row.setSpacing(6)
@@ -95,7 +101,8 @@ class AISettingsDialog(QDialog):
         # 打开时按当前值反推预设（都对不上就落在「自定义…」）
         self._select_preset_for(endpoint, model)
         self._client = None
-        fit_to_screen(self)
+        self._models_client = None
+        polish_dialog(self)
         self.setMinimumWidth(460)
 
     # 界面联动
@@ -106,7 +113,7 @@ class AISettingsDialog(QDialog):
         if endpoint:
             self._endpoint_edit.setText(endpoint)
         if model:
-            self._model_edit.setText(model)
+            self._model_combo.setCurrentText(model)
 
     def _select_preset_for(self, endpoint: str, model: str) -> None:
         for index, (_name, p_endpoint, _p_model) in enumerate(AI_PRESETS):
@@ -120,11 +127,44 @@ class AISettingsDialog(QDialog):
             QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         )
 
+    # 获取模型列表
+    def _on_fetch_models(self) -> None:
+        from ...services.ai_client import AIModelsClient
+
+        endpoint = self._endpoint_edit.text().strip()
+        if not endpoint:
+            self._set_status("请先填接口地址。", error=True)
+            return
+        self._fetch_button.setEnabled(False)
+        self._set_status("正在从 %s 获取模型列表…" % endpoint, error=False)
+        if self._models_client is not None:
+            self._models_client.deleteLater()
+        self._models_client = AIModelsClient(endpoint, self._key_edit.text().strip(), self)
+        self._models_client.finished.connect(self._on_models_fetched)
+        self._models_client.failed.connect(self._on_models_failed)
+        self._models_client.send()
+
+    def _on_models_fetched(self, models: list) -> None:
+        self._fetch_button.setEnabled(True)
+        if not models:
+            self._set_status("服务商没有返回模型列表，请手动填写模型名称。", error=True)
+            return
+        current = self._model_combo.currentText().strip()
+        self._model_combo.clear()
+        self._model_combo.addItems(models)
+        if current:
+            self._model_combo.setCurrentText(current)
+        self._set_status("获取到 %d 个模型，下拉选择即可（也可手动输入）。" % len(models), error=False)
+
+    def _on_models_failed(self, message: str) -> None:
+        self._fetch_button.setEnabled(True)
+        self._set_status(message, error=True)
+
     def _current_config(self) -> Tuple[str, str, str]:
         return (
             self._endpoint_edit.text().strip(),
             self._key_edit.text().strip(),
-            self._model_edit.text().strip(),
+            self._model_combo.currentText().strip(),
         )
 
     # 测试连接

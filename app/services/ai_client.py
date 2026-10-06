@@ -273,6 +273,84 @@ def parse_rules_payload(
 
 
 # ---------------------------------------------------------------- HTTP 客户端
+def parse_models_payload(text: str) -> List[str]:
+    """解析 GET /models 的响应，返回模型 id 列表（OpenAI 兼容：{"data":[{"id":..}]}）。"""
+    payload = _extract_json(text)
+    if isinstance(payload, dict):
+        payload = payload.get("data")
+    if not isinstance(payload, list):
+        return []
+    ids: List[str] = []
+    for item in payload:
+        if isinstance(item, dict):
+            model_id = item.get("id") or item.get("model") or item.get("name")
+        elif isinstance(item, str):
+            model_id = item
+        else:
+            model_id = None
+        if model_id and str(model_id) not in ids:
+            ids.append(str(model_id))
+    return ids
+
+
+class AIModelsClient(QObject):
+    """拉取服务商可用模型列表（GET {endpoint}/models），信号返回 id 列表。"""
+
+    finished = pyqtSignal(list)   # 模型 id 列表（可能为空）
+    failed = pyqtSignal(str)
+
+    def __init__(self, endpoint: str, api_key: str,
+                 parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._url = endpoint.rstrip("/") + "/models"
+        self._api_key = str(api_key or "").strip()
+        self._manager = QNetworkAccessManager(self)
+        self._manager.setTransferTimeout(_TIMEOUT_MS)
+        self._reply: Optional[QNetworkReply] = None
+
+    def send(self) -> None:
+        self.abort()
+        request = QNetworkRequest(QUrl(self._url))
+        request.setHeader(QNetworkRequest.KnownHeaders.ContentTypeHeader, "application/json")
+        if self._api_key:
+            request.setRawHeader(b"Authorization", ("Bearer " + self._api_key).encode("utf-8"))
+        self._reply = self._manager.get(request)
+        self._reply.finished.connect(self._on_finished)
+
+    def abort(self) -> None:
+        if self._reply is not None:
+            self._reply.finished.disconnect(self._on_finished)
+            self._reply.abort()
+            self._reply = None
+
+    def _on_finished(self) -> None:
+        reply = self._reply
+        if reply is None:
+            return
+        self._reply = None
+        error = reply.error()
+        try:
+            raw = bytes(reply.readAll())
+        finally:
+            reply.deleteLater()
+        if error == QNetworkReply.NetworkError.OperationCanceledError:
+            return
+        if error != QNetworkReply.NetworkError.NoError:
+            status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+            if error == QNetworkReply.NetworkError.TimeoutError:
+                message = "获取模型列表超时（%d 秒）。" % (_TIMEOUT_MS // 1000)
+            elif status in (401, 403):
+                message = "服务端返回 %s：API Key 可能不对或没有权限。" % status
+            elif status == 404:
+                message = "该服务商不支持 /models 接口，请手动填写模型名称。"
+            else:
+                message = "获取模型列表失败：%s" % reply.errorString()
+            self.failed.emit(message)
+            return
+        models = parse_models_payload(raw.decode("utf-8", "replace"))
+        self.finished.emit(models)
+
+
 class AIChatClient(QObject):
     """OpenAI 兼容 chat/completions 的最小客户端（QtNetwork 异步）。
 

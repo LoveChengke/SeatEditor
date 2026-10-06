@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QRadioButton, QVBoxLayout, QWidget,
 )
 
-from ..common import CollapsibleSection, fit_to_screen, hline
+from ..common import CollapsibleSection, polish_dialog, hline
 from ... import config
 from ...storage.excel_io import ExportOptions
 
@@ -38,7 +38,7 @@ class ExportDialog(QDialog):
         self._build_ui()
         self._on_mode_changed()
         self.adjustSize()
-        fit_to_screen(self)
+        polish_dialog(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

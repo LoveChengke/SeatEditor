@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..common import fit_to_screen, hline
+from ..common import polish_dialog, hline
 from ...config import DEFAULT_TIME_LIMIT, SOLVER_CHUNK
 from ...models.assignment import Solution
 from ...services.rule_engine import RuleEngine
@@ -43,7 +43,7 @@ class SolverProgressDialog(QDialog):
         self.setMinimumWidth(440)
         self._build_ui()
         self.adjustSize()
-        fit_to_screen(self)
+        polish_dialog(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

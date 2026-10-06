@@ -1,19 +1,17 @@
-"""冲突报告对话框：上半部分硬约束清单，下半部分软约束得分明细。"""
+"""冲突报告对话框：把底部「排位结果」页的内容放进独立窗口看（放大 / 投屏 / 打印）。
+
+内容渲染本身在 ``widgets/result_report.py``（底部面板用的是同一份），
+这里只负责加标题、给个关闭按钮——两处的排版永远不会走样。
+"""
 
 from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QGridLayout, QGroupBox,
-    QLabel, QListWidget, QListWidgetItem, QProgressBar,
-    QScrollArea, QSplitter, QVBoxLayout, QWidget,
-)
+from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout, QWidget
 
-from ..common import fit_to_screen, hline
-OK_TEXT = "✅ 全部满足"
-WARN_TEXT = "⚠️ 有 %d 条「必须满足」没做到"
+from ..common import polish_dialog
+from ..widgets.result_report import build_result_report
 
 
 class ConflictReportDialog(QDialog):
@@ -25,151 +23,25 @@ class ConflictReportDialog(QDialog):
         self.project = project
         self.setWindowTitle("排位结果报告")
         self.setMinimumWidth(560)
-        self.setMinimumHeight(480)
+        self.setMinimumHeight(440)
         self._build_ui()
-        self.resize(620, 560)
-        fit_to_screen(self)
+        self.resize(640, 560)
+        polish_dialog(self)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(10)
+
         title = QLabel("排位结果报告")
         title.setObjectName("PanelTitle")
         root.addWidget(title)
 
-        if self.solution is None:
-            hint = QLabel("没有可展示的排位结果，请先执行「一键排位」。")
-            hint.setObjectName("Hint")
-            hint.setWordWrap(True)
-            root.addWidget(hint)
-            root.addStretch(1)
-            root.addWidget(self._close_box())
-            return
+        root.addWidget(build_result_report(self.solution, self.project, self), 1)
 
-        summary = QLabel(
-            "耗时 %.1f 秒 · 重启 %d 次 · 迭代 %d 次"
-            % (float(getattr(self.solution, "elapsed", 0.0) or 0.0),
-               int(getattr(self.solution, "restarts", 0) or 0),
-               int(getattr(self.solution, "iterations", 0) or 0))
-        )
-        summary.setObjectName("Hint")
-        root.addWidget(summary)
-        root.addWidget(hline())
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.addWidget(self._build_hard_box())
-        splitter.addWidget(self._build_soft_box())
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-        root.addWidget(splitter, 1)
-        root.addWidget(self._close_box())
-
-    def _close_box(self) -> QWidget:
         box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close = box.button(QDialogButtonBox.StandardButton.Close)
         close.setText("关闭")
         close.setObjectName("Primary")
         box.rejected.connect(self.reject)
-        return box
-
-    def _build_hard_box(self) -> QWidget:
-        box = QGroupBox("必须满足的要求")
-        layout = QVBoxLayout(box)
-        layout.setSpacing(6)
-        violations = list(getattr(self.solution, "hard_violations", []) or [])
-        status = QLabel(OK_TEXT if not violations else WARN_TEXT % len(violations))
-        status.setObjectName("StatusOk" if not violations else "StatusWarn")
-        layout.addWidget(status)
-
-        if not violations:
-            hint = QLabel("所有「必须满足」的要求都做到了，可以放心导出座位表。")
-            hint.setObjectName("Hint")
-            hint.setWordWrap(True)
-            layout.addWidget(hint)
-            layout.addStretch(1)
-            return box
-
-        listing = QListWidget()
-        for violation in violations:
-            message = str(getattr(violation, "message", "") or violation)
-            label = str(getattr(violation, "rule_label", "") or "")
-            item = QListWidgetItem("⚠️ %s%s" % (("%s：" % label) if label else "", message))
-            seats = list(getattr(violation, "seats", []) or [])
-            students = list(getattr(violation, "students", []) or [])
-            detail = []
-            if seats:
-                detail.append("座位：%s" % "、".join(self._seat_text(s) for s in seats))
-            if students:
-                detail.append("学生：%s" % "、".join(self._student_name(s) for s in students))
-            if detail:
-                item.setToolTip("\n".join(detail))
-            listing.addItem(item)
-        layout.addWidget(listing, 1)
-        return box
-
-    def _build_soft_box(self) -> QWidget:
-        box = QGroupBox("尽量满足的情况")
-        layout = QVBoxLayout(box)
-        layout.setSpacing(6)
-        score = float(getattr(self.solution, "soft_score", 0.0) or 0.0)
-        total = QLabel("综合得分：%.1f 分（满分 100 分）" % score)
-        total.setObjectName("PanelTitle")
-        layout.addWidget(total)
-
-        scores = list(getattr(self.solution, "rule_scores", []) or [])
-        if not scores:
-            hint = QLabel("本次排位没有设置「尽量满足」类的要求。")
-            hint.setObjectName("Hint")
-            layout.addWidget(hint)
-            layout.addStretch(1)
-            return box
-
-        host = QWidget()
-        grid = QGridLayout(host)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(6)
-        grid.setColumnStretch(1, 1)
-        for row, rule_score in enumerate(scores):
-            label = str(getattr(rule_score, "label", "") or "规则")
-            weight = float(getattr(rule_score, "weight", 1.0) or 0.0)
-            satisfaction = max(0.0, min(1.0, float(getattr(rule_score, "satisfaction", 0.0) or 0.0)))
-            percent = int(round(satisfaction * 100))
-            name = QLabel("%s（重要程度 %g）" % (label, weight))
-            bar = QProgressBar()
-            bar.setRange(0, 100)
-            bar.setValue(percent)
-            bar.setTextVisible(False)
-            tip = "%s：满足度 %d%%" % (label, percent)
-            name.setToolTip(tip)
-            bar.setToolTip(tip)
-            grid.addWidget(name, row, 0)
-            grid.addWidget(bar, row, 1)
-            grid.addWidget(QLabel("%d%%" % percent), row, 2)
-
-        area = QScrollArea()
-        area.setWidgetResizable(True)
-        area.setWidget(host)
-        layout.addWidget(area, 1)
-        return box
-
-    # 文案
-    def _seat_text(self, seat_key) -> str:
-        parts = str(seat_key or "").split("-")
-        if len(parts) != 3:
-            return str(seat_key or "")
-        try:
-            group, row, col = (int(p) + 1 for p in parts)
-        except ValueError:
-            return str(seat_key)
-        return "第 %d 组 第 %d 排 第 %d 列" % (group, row, col)
-
-    def _student_name(self, sid) -> str:
-        sid_text = str(sid or "")
-        try:
-            name = self.project.student_name(sid_text)
-        except Exception:
-            name = ""
-        if name and name != sid_text:
-            return "%s（%s）" % (name, sid_text)
-        return name or sid_text
+        root.addWidget(box)

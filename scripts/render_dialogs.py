@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
+from PyQt6.QtCore import Qt  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox, QVBoxLayout  # noqa: E402
 
 from app.models.layout import Layout  # noqa: E402
 from app.models.project import Project  # noqa: E402
@@ -60,8 +61,10 @@ def main() -> int:
     from app.ui.style.theme import apply_dark_theme
 
     apply_dark_theme(app)
+    from app.ui import motion  # noqa: E402
 
-    from app.ui.dialogs.ai_rule_dialog import AIRuleDialog
+    motion.set_reduced_motion(True)   # 静态截图走查：关掉动效，避免抓到半透明中间帧
+
     from app.ui.dialogs.ai_settings_dialog import AISettingsDialog
     from app.ui.dialogs.export_dialog import ExportDialog
     from app.ui.dialogs.onboarding_dialog import OnboardingDialog
@@ -91,28 +94,47 @@ def main() -> int:
              "一键排位", lambda: None),
         ))),
     )
-    def _ai_rule_dialog():
-        """预填「已生成」状态：两条草稿规则 + 一条解析提示，便于走查完整 UI。"""
+    def _ai_panel_shell():
+        """预填「已生成」状态的 AI 助手面板（包在临时 QDialog 里方便截图）。"""
         from app.services.ai_client import parse_rules_payload
+        from app.ui.panels.ai_panel import AIRulePanel
         import json as _json
 
-        dialog = AIRuleDialog(project)
-        dialog._input.setPlainText("视力差的坐前排\n班长分散开")
-        dialog._config_label.setText("当前 AI 服务：https://open.bigmodel.cn/api/paas/v4（glm-4-flash）")
+        dialog = QDialog()
+        dialog.setWindowTitle("AI 助手")
+        layout = QVBoxLayout(dialog)
+        panel = AIRulePanel(project, dialog)
+        layout.addWidget(panel)
+        panel._input.setPlainText("视力差的坐前排\n班长分散开")
+        panel._config_label.setText("当前 AI 服务：https://open.bigmodel.cn/api/paas/v4（glm-4-flash）")
         payload = _json.dumps({"rules": [
             {"kind": "front_required", "params": {"tag": "视力差", "rows": 2}},
             {"kind": "tag_disperse", "params": {"tag": "班干部"}},
-            {"kind": "region_required", "params": {"tag": "需关注", "selection": "前排区"}},
         ]})
         rules, problems = parse_rules_payload(payload, project)
-        dialog._rebuild_results(rules)
-        dialog._set_problems("\n".join(problems), error=False)
+        panel._rebuild_results(rules)
+        panel._set_problems("\n".join(problems), error=False)
+        dialog.resize(380, 560)
         return dialog
 
+    def _about_shell():
+        """真造一个 QMessageBox 来截图（``QMessageBox.about`` 是静态方法，抓不到）。"""
+        from app import config
+        from app.ui.main_window import about_text
+
+        box = QMessageBox()
+        box.setWindowTitle("关于 %s" % config.APP_NAME)
+        box.setText(about_text())
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setIcon(QMessageBox.Icon.NoIcon)
+        box.layout().setSizeConstraint(box.layout().SizeConstraint.SetMinimumSize)
+        return box
+
     jobs = jobs + (
+        ("about", _about_shell),
         ("ai_settings", lambda: AISettingsDialog(
             "https://open.bigmodel.cn/api/paas/v4", "sk-demo-key", "glm-4-flash")),
-        ("ai_rule", _ai_rule_dialog),
+        ("ai_panel", _ai_panel_shell),
     )
 
     for name, factory in jobs:

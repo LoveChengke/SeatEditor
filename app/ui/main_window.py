@@ -11,19 +11,27 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from PyQt6.QtCore import QSettings, QSize, Qt, QTimer
+from PyQt6.QtCore import (
+    QAbstractAnimation, QEvent, QPropertyAnimation, QSettings, QSize, Qt, QTimer,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
     QFileDialog,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
-    QTabWidget,
+    QStackedWidget,
+    QTabBar,
     QToolBar,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -55,6 +63,9 @@ from ..storage.project_store import JsonProjectStore, ProjectStoreError
 from ..utils.natural_sort import natural_key
 from ..utils.seat_key import make_key, try_parse_key
 from ..utils.seat_key import Seat as Coord
+from . import motion
+from .icon_loader import action_icon, icon_color
+from .style import theme
 from .style.theme import (
     PANEL_RULE_WIDTH,
     PANEL_STUDENT_WIDTH,
@@ -67,7 +78,50 @@ MAX_RECENT = 8
 
 # 主窗口尺寸：优先用首选尺寸，屏幕放不下就退到可用区域以内
 PREFERRED_WINDOW_SIZE = (1440, 900)
-MIN_WINDOW_SIZE = (1100, 720)
+
+# 自适应断点：窗口越窄，先瘦侧边栏、再自动收起侧边栏，**始终保住座位表**。
+# 早先的最小尺寸写死成 1100×720，那个数比布局自身的最小值（Qt 算出来约 1158）
+# 还小，于是窗口能被压到 760 宽：48px 活动栏 + 320px 侧边栏把座位表挤到 250px，
+# 再窄一点就只剩一根活动栏。所以尺寸下限要**按骨架算出来**，不能写死。
+WIDE_WIDTH = 1180              # 宽窗档：两侧并排还放得下座位表
+SIDEBAR_MIN_WIDE = 320         # 与 PANEL_STUDENT_WIDTH 一致（名单四列需要）
+SIDEBAR_MIN_COMPACT = 264      # 窄窗下的紧凑档
+GRID_MIN_WIDTH = 380           # 座位表的最小可用宽度（再窄就看不到一组座位了）
+GRID_MIN_HEIGHT = 260          # 座位表的最小可用高度（底部面板按它让位）
+MIN_WINDOW_HEIGHT = 560        # 菜单栏 + 工具栏 + 视图头 + 座位表 + 状态栏
+SHORT_HEIGHT = 700             # 比这更矮就算矮窗：活动栏图标行收紧
+                               # （不能取 620：底部面板开着时窗口最小高度就有 560+120=680，
+                               #  620 这个阈值永远够不到，规则等于没写）
+RAIL_WIDTH = 48                # 与 widgets.activity_bar 一致
+
+
+def about_text() -> str:
+    """「关于」里的富文本。
+
+    提成模块级函数是为了能被直接断言（``QMessageBox.about`` 是静态方法，
+    正文藏在调用里读不出来），顺带把开发者信息集中到 ``config``。
+    """
+    return (
+        "<b>%s</b> v%s<br><br>"
+        "面向中小学教师的单机教室座位编排工具。<br>"
+        "全部数据保存在本地项目文件（%s）中，无网络依赖、无账号体系。<br><br>"
+        "开发者：%s<br>"
+        "项目地址：%s<br>"
+        "技术栈：Python + PyQt6 + openpyxl"
+        % (config.APP_NAME, config.VERSION, config.PROJECT_EXT,
+           config.DEVELOPER, config.PROJECT_URL)
+    )
+
+
+class _StatusLink(QLabel):
+    """状态栏上可点的文字（点「3 处冲突」直接打开底部面板看是哪几处）。"""
+
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -88,12 +142,25 @@ class MainWindow(QMainWindow):
         self._pending_rotation_preview: Optional[RotationPlan] = None
         self._suppress_events = False
         self._syncing_view = False
+        self._snap_anim: Optional[QPropertyAnimation] = None
+        # 自适应：只回滚「自己收掉的」面板，用户手动收的不动。
+        # ``_xxx_user_open`` 由面板的 visibilityChanged 记录（用户点活动栏 / × /
+        # 菜单开关都会走到那里），启动首次显示不算用户意愿，见 _finish_startup。
+        self._side_user_open = False
+        self._side_auto_hidden = False
+        self._ai_user_open = False
+        self._ai_auto_hidden = False
+        self._bottom_user_open = False
+        self._bottom_auto_hidden = False
+        self._responsive_busy = False
+        self._startup_done = False
 
         self.setWindowTitle(config.APP_NAME)
         self._fit_window_to_screen()
 
         self._build_central()
         self._build_panels()
+        self._build_bottom()
         self._build_actions()
         self._build_menus()
         self._build_toolbar()
@@ -111,29 +178,260 @@ class MainWindow(QMainWindow):
         self._restore_last_project()
         self._refresh_all()
         self._sync_view_actions()
+        self._apply_responsive_layout()
         QTimer.singleShot(200, self._maybe_recover)
         QTimer.singleShot(400, self._maybe_welcome)
 
     def _fit_window_to_screen(self) -> None:
-        """按屏幕可用区域定尺寸：高 DPI（150%/200%）或小屏笔记本上不能比屏幕还大。"""
+        """按屏幕可用区域定尺寸，并把下限算成「骨架 + 座位表」的真实需要。
+
+        下限不能再写死：写死一个比布局自身最小值还小的数，窗口就能被压到
+        侧边栏和座位表双双消失、只剩一根活动栏。这里按
+        ``活动栏 + 侧边栏紧凑档 + 座位表最小宽度`` 求和，屏幕更小再退让。
+        """
         screen = self.screen() or QApplication.primaryScreen()
         if screen is None:
-            self.setMinimumSize(*MIN_WINDOW_SIZE)
+            self.setMinimumSize(self._content_min_size())
             self.resize(*PREFERRED_WINDOW_SIZE)
             return
         available = screen.availableGeometry()
-        min_width = min(MIN_WINDOW_SIZE[0], max(720, available.width() - 40))
-        min_height = min(MIN_WINDOW_SIZE[1], max(520, available.height() - 80))
+        need_w, need_h = self._content_min_size()
+        min_width = min(need_w, max(GRID_MIN_WIDTH + RAIL_WIDTH, available.width() - 40))
+        min_height = min(need_h, max(420, available.height() - 80))
         self.setMinimumSize(min_width, min_height)
         self.resize(
             max(min_width, min(PREFERRED_WINDOW_SIZE[0], available.width() - 20)),
             max(min_height, min(PREFERRED_WINDOW_SIZE[1], available.height() - 40)),
         )
 
+    @staticmethod
+    def _content_min_size() -> Tuple[int, int]:
+        return (RAIL_WIDTH + SIDEBAR_MIN_COMPACT + GRID_MIN_WIDTH, MIN_WINDOW_HEIGHT)
+
+    # ---------------------------------------------------------------- 自适应
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        super().resizeEvent(event)
+        self._apply_responsive_layout()
+
+    def _apply_responsive_layout(self) -> None:
+        """窄窗 / 矮窗下的让位次序：座位表 > 侧边栏 > AI 面板 > 底部面板。
+
+        老师排座时盯的是座位表，其余面板都是「顺手看一眼」的辅助，所以：
+
+        - **宽度**：算清「活动栏 + 各面板最小宽度 + 座位表下限（``GRID_MIN_WIDTH``）」
+          要多少地方；装不下就按 AI 面板 → 侧边栏的次序让位。用的是**预算**
+          而不是写死断点，所以「开着 AI 面板 1200px 就嫌挤、只开侧边栏
+          900px 也够用」都能算对。
+        - 屏幕本身小到连用户自己开的面板都放不下时，连它们一起让位——
+          那种情况下座位表只剩一条缝，界面看着就是坏的。
+        - **最小尺寸**跟着当前布局收紧：开着的面板越多，窗口能缩到的下限越大。
+          于是「在小窗里再开一个面板」的结果是窗口被顶大到装得下，
+          而不是把座位表挤没。屏幕比下限还小时让位给屏幕（先保证整窗可见）。
+
+        两个标记决定谁说话算数：``_xxx_user_open`` 是用户自己开/关过的，
+        ``_xxx_auto_hidden`` 是我们为腾地方收起来的。用户自己开的优先留着；
+        我们收掉的，窗口变大后由我们还原。
+        """
+        if self._responsive_busy or not hasattr(self, "side_dock"):
+            return   # 界面还没搭完（构造过程中的 resize 事件）
+        self._responsive_busy = True
+        try:
+            width, height = self.width(), self.height()
+            screen = self.screen() or QApplication.primaryScreen()
+            available = screen.availableGeometry() if screen is not None else None
+            # 底部面板再高也不许超过窗口的 40%（不许把座位表压成一条缝）
+            self.bottom_dock.setMaximumHeight(max(120, int(height * 0.40)))
+
+            # 视图头的教室摘要是「一行长文字」，会把中央区的最小宽度撑到 450px，
+            # 窄窗里它属于可有可无的信息：收起来（内容挪到悬停提示里），
+            # 中央区才肯让位——否则窗口怎么也压不窄，座位表却还是被挤。
+            self.lbl_view_meta.setVisible(width >= WIDE_WIDTH)
+
+            # ---- 高度：底部面板要跟座位表抢纵向空间，同样用「下限」判据——
+            # 座位表拿不到 GRID_MIN_HEIGHT 就让底部面板（先收起）让位。
+            # 注意不能写成「窗口矮于 X 就收」：底部面板开着时最小高度本身就有
+            # 560+120，窗口根本到不了那个 X，规则会永远不触发。
+            chrome_height = 120          # 菜单栏 + 工具栏 + 视图头 + 状态栏
+            drop_bottom = (height - chrome_height - self.bottom_dock.minimumHeight()
+                           < GRID_MIN_HEIGHT)
+            if drop_bottom and self._bottom_user_open and available is not None:
+                # 用户自己开的：只有屏幕高到也别想放得下时才收
+                drop_bottom = (available.height() - 60 - chrome_height
+                               - self.bottom_dock.minimumHeight() < GRID_MIN_HEIGHT)
+            self._auto_fit_dock(self.bottom_dock, "_bottom", want_visible=not drop_bottom)
+            self.activity_bar.set_compact(height < SHORT_HEIGHT)
+
+            # ---- 宽度：先瘦侧边栏一档，再决定哪些面板留得下
+            compact = width < WIDE_WIDTH
+            self.side_dock.setMinimumWidth(
+                SIDEBAR_MIN_COMPACT if compact else SIDEBAR_MIN_WIDE)
+            # 「能用的宽度」取窗口现在的宽度与屏幕能给的最大宽度里的大者：
+            # 窗口比屏幕窄是用户自己拉的（最小尺寸会兜住座位表），
+            # 只有连屏幕都放不下时才算真放不下，那才需要收面板。
+            room = width if available is None else max(width, available.width() - 20)
+
+            panels = ((self.ai_dock, "_ai"), (self.side_dock, "_side"))   # 让位次序
+            # 候选 = 开着的 + 我们之前为腾地方收掉的（后者要在这里被还原，
+            # 否则收掉一次就再也回不来了）
+            keep = [dock for dock, prefix in panels
+                    if dock.isVisible() or getattr(self, prefix + "_auto_hidden")]
+
+            def need_width(docks) -> int:
+                return (self.rail_dock.width() + GRID_MIN_WIDTH
+                        + sum(self._panel_cost(d) for d in docks))
+
+            # 两轮：先只动「不是用户开着的」，还不够就再动用户开着的
+            for respect_user in (True, False):
+                for dock, prefix in panels:
+                    if dock in keep and need_width(keep) > room:
+                        if respect_user and getattr(self, prefix + "_user_open"):
+                            continue
+                        keep.remove(dock)
+
+            for dock, prefix in panels:
+                self._auto_fit_dock(dock, prefix, want_visible=dock in keep)
+
+            # ---- 最小尺寸 = 当前布局的真实需要（屏幕装不下时让位给屏幕）
+            min_width = min(need_width(keep), max(RAIL_WIDTH + GRID_MIN_WIDTH, room))
+            min_height = MIN_WINDOW_HEIGHT
+            if self.bottom_dock.isVisible():
+                min_height += self.bottom_dock.minimumHeight()
+            if available is not None:
+                min_height = min(min_height, max(420, available.height() - 60))
+            self.setMinimumSize(min_width, min_height)
+        finally:
+            self._responsive_busy = False
+
+    def _panel_cost(self, dock) -> int:
+        """面板在预算里算多少宽度：开着的按**最小**宽度算，没开的算 0。
+
+        不能按它当前的实际宽度算：老师把侧边栏拖宽到 500 之后，
+        预算会突然判定「放不下」而把面板收掉；收掉后空间又够了，下一轮再打开——
+        来回抖动。按最小宽度算则是单调的（面板总能被压到最小），判定稳定。
+        """
+        return dock.minimumWidth() if dock.isVisible() else 0
+
+    def _auto_fit_dock(self, dock, prefix: str, want_visible: bool) -> None:
+        """按预算开/关一个辅助面板，并记住是「谁收的」。"""
+        auto_attr = prefix + "_auto_hidden"
+        if getattr(self, prefix + "_user_open"):
+            return                      # 用户自己开着的，自适应不动它
+        if not want_visible and dock.isVisible():
+            setattr(self, auto_attr, True)
+            dock.close()                # close() 而非 hide()：视图菜单的勾选状态跟着走
+        elif want_visible and getattr(self, auto_attr) and not dock.isVisible():
+            setattr(self, auto_attr, False)
+            dock.show()
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        super().showEvent(event)
+        if not self._startup_done:
+            # 窗口首次显示会把本来可见的子面板一并「显示」，那批 visibilityChanged
+            # 不是用户操作；等事件循环转一圈再认领用户意愿（showEvent 里子面板
+            # 还没显示完，直接判会漏掉后面那批）。
+            QTimer.singleShot(0, self._finish_startup)
+
+    def _finish_startup(self) -> None:
+        if self._startup_done:
+            return
+        self._startup_done = True
+        for attr in ("_side_user_open", "_ai_user_open", "_bottom_user_open"):
+            setattr(self, attr, False)
+        self._apply_responsive_layout()
+
+    def _on_dock_visibility_changed(self, dock, visible: bool) -> None:
+        """面板可见性变化：同步活动栏高亮，并区分「用户动的」还是「自适应动的」。"""
+        try:
+            self._sync_rail_active()
+            if self._responsive_busy or not self._startup_done:
+                return                  # 自己开/关的 / 启动那批，都不代表用户意愿
+            for prefix, target in (("_side", self.side_dock), ("_ai", self.ai_dock),
+                                   ("_bottom", self.bottom_dock)):
+                if target is dock:
+                    setattr(self, prefix + "_user_open", bool(visible))
+                    setattr(self, prefix + "_auto_hidden", False)
+                    break
+            # 面板开/关会改变「最小尺寸」与宽度预算，立刻重算：否则关掉面板后
+            # 窗口还卡在旧的最小宽度上，怎么拖都缩不小
+            self._apply_responsive_layout()
+        except RuntimeError:
+            # 窗口正在析构：子面板这时还会报告可见性变化，而 MainWindow 的
+            # C++ 对象已经销毁，再碰任何成员都会抛 RuntimeError（渲染脚本
+            # 关窗口时实测踩到过）
+            pass
+
+    # ---------------------------------------------------------------- 窗口吸边
+    def moveEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        """磁性吸边（仿 Windows 贴靠）：拖到屏幕可用边缘 24px 内自动贴齐。
+
+        上面 / 左面 / 右面三个方向（Windows 不吸下缘，那里是任务栏）。
+        拖动途中松手前窗口就被「吸」到边缘；继续往回拖超过滞回量立刻放手。
+        """
+        super().moveEvent(event)
+        self._maybe_snap_to_edge()
+
+    def _maybe_snap_to_edge(self) -> None:
+        if self.isMaximized() or self.isFullScreen() or self._suppress_events:
+            return
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        frame = self.frameGeometry()
+        # 吸附动画进行中：用户又把窗口拖离目标超过滞回量 → 停止动画还控制权
+        anim = self._snap_anim
+        if anim is not None and anim.state() == QAbstractAnimation.State.Running:
+            end = anim.endValue()
+            if (frame.topLeft() - end).manhattanLength() > motion.SNAP_HYSTERESIS:
+                anim.stop()
+            else:
+                return
+        target, _edge = motion.compute_snap_target(
+            frame, screen.availableGeometry(), motion.SNAP_THRESHOLD
+        )
+        if target is None or target == frame.topLeft():
+            return
+        if motion.reduced_motion():
+            self.move(target)   # 降级：保留吸附行为，去掉滑动动画
+            return
+        slide = QPropertyAnimation(self, b"pos", self)
+        slide.setDuration(motion.DUR_SNAP)
+        slide.setEasingCurve(motion.ease_in_out())
+        slide.setStartValue(frame.topLeft())
+        slide.setEndValue(target)
+        slide.finished.connect(self._on_snap_finished)
+        self._snap_anim = slide
+        slide.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _on_snap_finished(self) -> None:
+        self._snap_anim = None
+
     # 界面搭建
     def _build_central(self) -> None:
-        self.grid = SeatGridView(self)
-        self.setCentralWidget(self.grid)
+        """中央区 = 视图头（一条细横条）+ 座位表。
+
+        视图头是「这份文档现在什么样」的控件家：左边写当前教室摘要，右边是
+        显示学号 / 组标题 / 区域高亮 / 卡片尺寸 / 主题这些**看**的开关。
+        它们同时也在「视图」菜单里，两处状态由各自的 QAction 统一镜像。
+        """
+        from .common import HeaderBar
+
+        self.central_area = QWidget(self)
+        self.central_area.setObjectName("CentralArea")
+        column = QVBoxLayout(self.central_area)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+
+        self.editor_header = HeaderBar("座位表", self.central_area,
+                                       object_name="EditorHeader")
+        self.lbl_view_meta = QLabel("", self.central_area)
+        self.lbl_view_meta.setObjectName("HeaderMeta")
+        self.editor_header.add_after_title(self.lbl_view_meta)
+        column.addWidget(self.editor_header)
+
+        self.grid = SeatGridView(self.central_area)
+        column.addWidget(self.grid, 1)
+        self.setCentralWidget(self.central_area)
+
         self.grid.seat_clicked.connect(self._on_seat_clicked)
         self.grid.seat_double_clicked.connect(self._on_seat_double_clicked)
         self.grid.seat_context_requested.connect(self._on_seat_context_menu)
@@ -143,24 +441,15 @@ class MainWindow(QMainWindow):
         self.grid.set_project(self.project)
 
     def _build_panels(self) -> None:
+        """左侧：活动栏 + 侧边栏（名单 / 规则 / 区域 / 换座 四个页面）；右侧：AI 助手。"""
+        from .common import HeaderBar, blank_title_bar
         from .panels.rotation_panel import RotationPanel
         from .panels.rule_panel import RulePanel
         from .panels.selection_panel import SelectionPanel
         from .panels.student_panel import StudentPanel
+        from .widgets.activity_bar import RAIL_WIDTH, ActivityBar
 
         self.student_panel = StudentPanel(self.project, self)
-        self.student_dock = QDockWidget("学生名单", self)
-        self.student_dock.setObjectName("StudentDock")
-        self.student_dock.setWidget(self.student_panel)
-        # 左边栏不能压太窄：名单的「学号 / 姓名 / 性别 / 标签」四列需要约 320px，
-        # 再窄就会把标签列切成一个字，看着像界面坏了（内容其实还在，可横向滚动）。
-        self.student_dock.setMinimumWidth(PANEL_STUDENT_WIDTH + 20)
-        self.student_dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetMovable
-            | QDockWidget.DockWidgetFeature.DockWidgetClosable
-        )
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.student_dock)
-
         self.student_panel.selection_changed.connect(self._on_student_selection)
         self.student_panel.import_requested.connect(self.import_excel)
         self.student_panel.add_requested.connect(self.add_student)
@@ -180,30 +469,8 @@ class MainWindow(QMainWindow):
         self.selection_panel = SelectionPanel(self.project, self)
         self.rotation_panel = RotationPanel(self.project, self)
 
-        self.right_tabs = QTabWidget(self)
-        self.right_tabs.setObjectName("Panel")
-        self.right_tabs.addTab(self.rule_panel, "排座规则")
-        self.right_tabs.addTab(self.selection_panel, "常用区域")
-        self.right_tabs.addTab(self.rotation_panel, "定期换座")
-        self.right_tabs.setTabToolTip(0, "排座规则：谁坐哪里（先看这一页）")
-        self.right_tabs.setTabToolTip(1, "常用区域：把讲台边、靠窗这些座位存成一组，加规则或批量操作时直接选用")
-        self.right_tabs.setTabToolTip(2, "定期换座：每隔一段时间整班轮换（可选）")
-
-        self.right_dock = QDockWidget("排座规则与区域", self)
-        self.right_dock.setObjectName("RightDock")
-        self.right_dock.setWidget(self.right_tabs)
-        self.right_dock.setMinimumWidth(PANEL_RULE_WIDTH - 30)
-        self.right_dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetMovable
-            | QDockWidget.DockWidgetFeature.DockWidgetClosable
-        )
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.right_dock)
-        # 给两侧面板一个合适的初始宽度（用户仍可自由拖动）
-        self.resizeDocks([self.student_dock], [PANEL_STUDENT_WIDTH + 50], Qt.Orientation.Horizontal)
-        self.resizeDocks([self.right_dock], [PANEL_RULE_WIDTH + 40], Qt.Orientation.Horizontal)
-
         self.rule_panel.rules_changed.connect(self._on_rules_changed)
-        self.rule_panel.ai_requested.connect(self.show_ai_rule_dialog)
+        self.rule_panel.ai_requested.connect(self.show_ai_panel)
         self.selection_panel.apply_requested.connect(self._on_selection_apply)
         self.selection_panel.selection_created.connect(self._on_selection_created)
         self.selection_panel.selection_deleted.connect(self._on_selection_deleted)
@@ -215,17 +482,278 @@ class MainWindow(QMainWindow):
         self.rotation_panel.apply_requested.connect(self._on_rotation_apply)
         self.rotation_panel.rollback_requested.connect(self._on_rotation_rollback)
 
+        # ---- 侧边栏页面：一列一页，活动栏切换（原先左右两块面板并排，
+        # 老师要同时盯两处；收成一列后一次只看一页，活动栏负责找回来）
+        self._side_pages = [
+            ("students", "students", "学生名单", "学生名单：导入、搜索、拖到座位上", self.student_panel),
+            ("rules", "rules", "排座规则", "排座规则：谁坐哪里（先看这一页）", self.rule_panel),
+            ("regions", "regions", "常用区域", "常用区域：把讲台边、靠窗这些座位存成一组", self.selection_panel),
+            ("rotation", "rotation", "定期换座", "定期换座：每隔一段时间整班轮换（可选）", self.rotation_panel),
+        ]
+        self._side_keys = [key for key, _glyph, _title, _tip, _page in self._side_pages]
+        self._side_key = self._side_keys[0]
+
+        self.side_pages = QStackedWidget(self)
+        self.side_pages.setObjectName("SidePages")
+        for _key, _glyph, _title, _tip, page in self._side_pages:
+            # 侧边栏里是整页内容，不再是浮在别处上的一张卡片：
+            # 去掉卡片描边（QSS 里 #SidePage 与对话框用的 #Panel 分开管）
+            page.setObjectName("SidePage")
+            self.side_pages.addWidget(page)
+
+        self.side_dock = QDockWidget("侧边栏", self)
+        self.side_dock.setObjectName("SideDock")
+        self.side_dock.setToolTip("学生名单 / 排座规则 / 常用区域 / 定期换座")
+        self.side_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        # 侧边栏不能压太窄：名单的「学号 / 姓名 / 性别 / 标签」四列需要约 320px，
+        # 再窄就会把标签列切成一个字，看着像界面坏了（内容其实还在，可横向滚动）。
+        self.side_dock.setMinimumWidth(PANEL_STUDENT_WIDTH)
+        self.side_header = HeaderBar(self._side_pages[0][2], self.side_dock,
+                                     closable=self.side_dock)
+        self.side_header.add_menu_button("dots", "更多：导入名单 / 布局 / 标签", self._build_side_menu())
+        self.side_dock.setTitleBarWidget(self.side_header)
+        self.side_dock.setWidget(self.side_pages)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.side_dock)
+
+        # ---- 活动栏：48px 图标列，侧边栏收起后它还在
+        self.activity_bar = ActivityBar(self)
+        for key, glyph_name, _title, tip, _page in self._side_pages:
+            self.activity_bar.add_page(key, glyph_name, "%s（再点一次收起）" % tip)
+        self.activity_bar.add_action("ai", "ai", "AI 助手：用大白话让 AI 写排座规则")
+        self.activity_bar.add_action("theme", "theme", "白天 / 黑夜切换")
+        self.activity_bar.add_action("help", "help", "快捷键与使用说明（F1）")
+        self.activity_bar.clicked.connect(self._on_rail_clicked)
+        self.activity_bar.set_theme_icon(theme.is_dark())
+
+        self.rail_dock = QDockWidget("活动栏", self)
+        self.rail_dock.setObjectName("RailDock")
+        self.rail_dock.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
+        self.rail_dock.setFixedWidth(RAIL_WIDTH)
+        self.rail_dock.setTitleBarWidget(blank_title_bar(self.rail_dock))
+        self.rail_dock.setWidget(self.activity_bar)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.rail_dock)
+        # 活动栏永远在最左：显式把侧边栏摆到它右边，不靠加入顺序
+        self.splitDockWidget(self.rail_dock, self.side_dock, Qt.Orientation.Horizontal)
+
+        # ---- AI 助手：右侧常驻停靠窗口（默认不占地方，用完可关；可拖出来吸边）
+        from .panels.ai_panel import AIRulePanel
+
+        self.ai_panel = AIRulePanel(self.project, self)
+        self.ai_panel.rules_ready.connect(self._on_ai_rules_ready)
+        self.ai_dock = QDockWidget("AI 助手", self)
+        self.ai_dock.setObjectName("AIDock")
+        self.ai_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.ai_dock.setMinimumWidth(PANEL_RULE_WIDTH - 10)
+        ai_header = HeaderBar("AI 助手", self.ai_dock, closable=self.ai_dock)
+        ai_header.add_button("dots", "AI 设置：接口地址、模型、API Key",
+                             self.ai_panel.open_settings)
+        self.ai_dock.setTitleBarWidget(ai_header)
+        self.ai_dock.setWidget(self.ai_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.ai_dock)
+        self.ai_dock.hide()
+
+        self.resizeDocks([self.side_dock], [PANEL_STUDENT_WIDTH + 50],
+                         Qt.Orientation.Horizontal)
+        self.resizeDocks([self.ai_dock], [PANEL_RULE_WIDTH + 40],
+                         Qt.Orientation.Horizontal)
+        # 浮动后拖近主窗口边缘 / 角落时磁性贴靠（见 eventFilter）
+        for dock in (self.side_dock, self.ai_dock, self.rail_dock):
+            dock.installEventFilter(self)
+
+    def _build_side_menu(self) -> QMenu:
+        """侧边栏头部的「⋯」：跨页面的几个常用入口，避免为了导入名单先切页。
+
+        这里直接建菜单项而不是复用 ``act_*``：侧边栏在 ``_build_actions`` 之前
+        搭好，那时 QAction 还不存在（复用会拿到 AttributeError）。
+        """
+        menu = QMenu(self)
+        menu.addAction("导入学生名单…", self.import_excel)
+        menu.addAction("粘贴文本导入名单…", self.import_text)
+        menu.addAction("生成名单模板（Excel）…", self.save_roster_template)
+        menu.addSeparator()
+        menu.addAction("教室布局…", self.edit_layout)
+        menu.addAction("标签管理…", self.manage_tags)
+        menu.addSeparator()
+        menu.addAction("收起侧边栏", self.side_dock_hide)
+        return menu
+
+    def side_dock_hide(self) -> None:
+        self.side_dock.hide()
+
+    def _build_bottom(self) -> None:
+        """底部面板：冲突清单 + 排位结果（原先「排位完成」弹的是一个模态报告窗）。
+
+        老师排完位最想看两件事——「哪几条要求没做到」「整体排得怎么样」。
+        做成常驻面板后可以一边改座位一边对照，不必反复开关弹窗；
+        面板本身是停靠窗口，可以拖大、拖出来、也能吸边。
+        """
+        from .common import HeaderBar
+
+        self.bottom_dock = QDockWidget("底部面板", self)
+        self.bottom_dock.setObjectName("BottomDock")
+        self.bottom_dock.setToolTip("冲突清单 / 排位结果")
+        self.bottom_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.bottom_dock.setMinimumHeight(120)
+
+        self.bottom_tabs = QTabBar(self.bottom_dock)
+        self.bottom_tabs.setObjectName("PanelTabs")
+        self.bottom_tabs.setDrawBase(False)
+        self.bottom_tabs.setExpanding(False)
+        self.bottom_tabs.addTab("冲突")
+        self.bottom_tabs.addTab("排位结果")
+        self.bottom_tabs.setTabToolTip(0, "现在哪些「必须满足」的要求没做到；双击一条可定位到座位")
+        self.bottom_tabs.setTabToolTip(1, "上一次排位的明细：做到多少、哪条差一些")
+        self.bottom_tabs.currentChanged.connect(self._on_bottom_tab_changed)
+
+        self.bottom_header = HeaderBar("", self.bottom_dock, closable=self.bottom_dock)
+        self.bottom_header.add_leading(self.bottom_tabs)
+        self.bottom_header.add_button("report", "打开「排位结果」页", lambda: self.show_bottom(1))
+        self.bottom_header.add_button("chevron-down", "收起底部面板", self.bottom_dock.close)
+        self.bottom_dock.setTitleBarWidget(self.bottom_header)
+
+        self.bottom_pages = QStackedWidget(self.bottom_dock)
+        self.conflict_list = QListWidget(self.bottom_pages)
+        self.conflict_list.setObjectName("ConflictList")
+        self.conflict_list.setAlternatingRowColors(False)
+        self.conflict_list.itemDoubleClicked.connect(self._on_conflict_activated)
+        self.bottom_pages.addWidget(self.conflict_list)
+
+        self.result_host = QWidget(self.bottom_pages)
+        self.result_layout = QVBoxLayout(self.result_host)
+        self.result_layout.setContentsMargins(0, 0, 0, 0)
+        self.result_layout.setSpacing(0)
+        self.bottom_pages.addWidget(self.result_host)
+
+        self.bottom_dock.setWidget(self.bottom_pages)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.bottom_dock)
+        self.bottom_dock.setMaximumHeight(360)
+        self.resizeDocks([self.bottom_dock], [200], Qt.Orientation.Vertical)
+        self.bottom_dock.hide()
+        # 三个面板的显隐都接到同一处：活动栏高亮要靠它同步，
+        # 自适应的「谁收的」判断也靠它区分用户操作与程序收缩（放这里是因为
+        # 到这一步三个面板才都存在）
+        for dock in (self.side_dock, self.ai_dock, self.bottom_dock):
+            dock.installEventFilter(self)
+            dock.visibilityChanged.connect(
+                lambda visible, d=dock: self._on_dock_visibility_changed(d, visible))
+
+    def show_bottom(self, index: int = 0) -> None:
+        """打开底部面板并切到某一页（0 冲突 / 1 排位结果）。"""
+        self.bottom_dock.show()
+        self.bottom_tabs.setCurrentIndex(max(0, min(index, self.bottom_tabs.count() - 1)))
+
+    def _on_bottom_tab_changed(self, index: int) -> None:
+        self.bottom_pages.setCurrentIndex(index)
+        page = self.bottom_pages.widget(index)
+        if page is not None:
+            motion.swap_in(page)
+
+    def _on_conflict_activated(self, item: QListWidgetItem) -> None:
+        seats = item.data(Qt.ItemDataRole.UserRole) or []
+        self.grid.focus_seats(seats)
+
+    def _refresh_conflict_panel(self) -> None:
+        """把当前硬约束冲突填进底部「冲突」页（座位键存在条目里，双击可定位）。"""
+        engine = self._engine()
+        try:
+            violations = list(engine.check_hard(self.project.assignment))
+        except Exception:
+            violations = []
+        self.conflict_list.clear()
+        for violation in violations:
+            label = str(getattr(violation, "rule_label", "") or "")
+            message = str(getattr(violation, "message", "") or violation)
+            item = QListWidgetItem("%s%s" % (("%s：" % label) if label else "", message))
+            seats = list(getattr(violation, "seats", []) or [])
+            item.setData(Qt.ItemDataRole.UserRole, seats)
+            if seats:
+                item.setToolTip("双击定位到 %s" % self._seat_label(seats[0]))
+            self.conflict_list.addItem(item)
+        self.bottom_tabs.setTabText(0, "冲突 %d" % len(violations) if violations else "冲突")
+        if not violations:
+            placeholder = QListWidgetItem("当前方案满足全部「必须满足」的要求。")
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.conflict_list.addItem(placeholder)
+
+    def _fill_result_panel(self, solution) -> None:
+        """重建「排位结果」页（结果报告由 widgets.result_report 统一渲染）。"""
+        while self.result_layout.count():
+            old = self.result_layout.takeAt(0).widget()
+            if old is not None:
+                old.setParent(None)
+                old.deleteLater()
+        from .widgets.result_report import build_result_report
+
+        self.result_layout.addWidget(
+            build_result_report(solution, self.project, self.result_host))
+
+    def _on_rail_clicked(self, key: str) -> None:
+        """活动栏点击：前四个是侧边栏页面，后三个是常驻动作。"""
+        if key == "ai":
+            self.show_ai_panel()
+        elif key == "theme":
+            self.act_dark_mode.setChecked(not self.act_dark_mode.isChecked())
+        elif key == "help":
+            self.show_help()
+        else:
+            self.show_sidebar_page(key)
+
+    def show_sidebar_page(self, key: str) -> None:
+        """显示某一页侧边栏；已经在这一页时再点一下 = 收起（与 VS Code 一致）。"""
+        if key not in self._side_keys:
+            return
+        if self.side_dock.isVisible() and self._side_key == key:
+            # 收起要给回话：否则老师点一下只看到左边剩一条图标栏，以为界面坏了
+            self.side_dock.hide()
+            self.toast("侧边栏已收起 —— 点左侧的图标可以再打开")
+            return
+        index = self._side_keys.index(key)
+        first_time = self._side_key != key or not self.side_dock.isVisible()
+        self._side_key = key
+        if self.side_pages.currentIndex() != index:
+            self.side_pages.setCurrentIndex(index)
+        self.side_header.set_title(self._side_pages[index][2])
+        self.side_dock.show()
+        if first_time:
+            motion.swap_in(self.side_pages.currentWidget())
+        self._sync_rail_active()
+
+    def _sync_rail_active(self) -> None:
+        self.activity_bar.set_active(self._side_key if self.side_dock.isVisible() else None)
+
+    def _sync_editor_header(self) -> None:
+        """视图头右侧的图标键跟随 QAction 的勾选状态（菜单里改也要跟上）。"""
+        for button, act in getattr(self, "_header_buttons", []):
+            if button.isChecked() != act.isChecked():
+                button.setChecked(act.isChecked())
+
     def _build_actions(self) -> None:
         def icon(name: str) -> QIcon:
-            """取 resources/icons 下的线性图标；文件缺失时返回空图标。"""
-            path = config.ICONS_DIR / ("%s.svg" % name)
-            return QIcon(str(path)) if path.exists() else QIcon()
+            """动作图标，按当前主题着色（见 icon_loader.action_icon）。
+
+            不能直接 ``QIcon(路径)``：SVG 的描边色写死在文件里，浅色主题下
+            图标会糊在近白的工具栏上看不见；自绘图标集则与活动栏共用同一套形状。
+            """
+            return action_icon(name)
 
         def action(text: str, shortcut: str = "", slot=None, tip: str = "",
                    checkable: bool = False, icon_name: str = "") -> QAction:
             act = QAction(text, self)
             if icon_name:
                 act.setIcon(icon(icon_name))
+                act.setProperty("icon_name", icon_name)
             if shortcut:
                 act.setShortcut(QKeySequence(shortcut))
             if tip:
@@ -267,11 +795,17 @@ class MainWindow(QMainWindow):
         self.act_layout = action("教室布局…", "Ctrl+B", self.edit_layout, "配置分组、行列、组间距与讲台方向", icon_name="layout")
         self.act_solve = action("一键排位", "F5", self.solve, "按规则自动排座位", icon_name="solve")
         self.act_solve_again = action("换一批", "Ctrl+R", self.solve, "重新搜索另一个方案", icon_name="solve")
-        self.act_ai_rules = action("AI 大白话排位…", "", self.show_ai_rule_dialog, "用一句话描述要求，AI 转成排座规则，确认后自动排位")
+        self.act_ai_rules = action("AI 助手", "", self.show_ai_panel, "用大白话让 AI 生成排座规则，确认后自动排位", icon_name="ai")
         self.act_report = action("查看排位结果", "", self.show_report, "看看哪些要求做到了、整体排得怎么样", icon_name="report")
         self.act_clear_all = action("清空全部座位", "", self.clear_all_seats, "把所有学生移回名单，重新排")
 
         self.act_tags = action("标签管理…", "Ctrl+T", self.manage_tags, "新增 / 重命名 / 删除标签与配色")
+
+        self.act_dark_mode = QAction("深色模式", self)
+        self.act_dark_mode.setCheckable(True)
+        self.act_dark_mode.setChecked(theme.is_dark())
+        self.act_dark_mode.toggled.connect(self._on_theme_toggled)
+        self.act_dark_mode.setStatusTip("在黑夜 / 白天两套界面配色之间切换")
 
         self.act_show_sid = QAction("显示学号", self)
         self.act_show_sid.setCheckable(True)
@@ -301,6 +835,38 @@ class MainWindow(QMainWindow):
         self.act_tour = action("新手引导", "", self.show_onboarding, "四步上手：布局 → 名单 → 规则 → 排位导出")
         self.act_help = action("快捷键与使用说明", "F1", self.show_help, "查看快捷键与上手步骤")
         self.act_about = action("关于", "", self.show_about, "关于本程序")
+
+        self._build_editor_buttons()
+
+    def _build_editor_buttons(self) -> None:
+        """中央视图头右侧的图标键。
+
+        每个键都镜像一个已有的 QAction（``trigger`` 转发过去，勾选状态回灌），
+        所以菜单里改、视图头里改是同一份状态，不会出现两处对不上。
+        """
+        header = self.editor_header
+        self._header_buttons: List[Tuple[QWidget, QAction]] = []
+
+        def mirror(button, act: QAction):
+            button.clicked.connect(act.trigger)
+            act.toggled.connect(button.setChecked)
+            button.setChecked(act.isChecked())
+            self._header_buttons.append((button, act))
+            return button
+
+        mirror(header.add_button("students", "在座位卡片上显示学号", checkable=True),
+               self.act_show_sid)
+        mirror(header.add_button("rules", "显示每组标题（第 1 组 …）", checkable=True),
+               self.act_show_title)
+        mirror(header.add_button("regions", "高亮选中「常用区域」里的座位", checkable=True),
+               self.act_show_selection)
+
+        size_menu = QMenu(self)
+        for act in self.act_size.values():
+            size_menu.addAction(act)
+        header.add_menu_button("layout", "座位卡片大小", size_menu)
+        header.add_button("theme", "白天 / 黑夜切换", self.act_dark_mode.trigger)
+        header.add_button("report", "查看上一次排位结果", lambda: self.show_bottom(1))
 
     def _build_menus(self) -> None:
         bar = self.menuBar()
@@ -347,8 +913,15 @@ class MainWindow(QMainWindow):
         for act in self.act_size.values():
             menu_size.addAction(act)
         menu_view.addSeparator()
-        menu_view.addAction(self.student_dock.toggleViewAction())
-        menu_view.addAction(self.right_dock.toggleViewAction())
+        menu_view.addAction(self.act_dark_mode)
+        menu_view.addSeparator()
+        for dock, glyph in ((self.side_dock, "students"), (self.ai_dock, "ai"),
+                            (self.bottom_dock, "report")):
+            act = dock.toggleViewAction()
+            act.setIcon(action_icon(glyph))
+            act.setProperty("icon_name", glyph)       # 主题切换时按这个重着色
+            act.setStatusTip(act.text())
+            menu_view.addAction(act)
 
         menu_seat = bar.addMenu("排位(&S)")
         menu_seat.addAction(self.act_solve)
@@ -388,6 +961,8 @@ class MainWindow(QMainWindow):
         bar.addAction(self.act_layout)
         bar.addAction(self.act_import)
         bar.addSeparator()
+        # AI 排位放在「一键排位」旁边：这是老师最常用的两条排位路径
+        bar.addAction(self.act_ai_rules)
         bar.addAction(self.act_solve)
         bar.addAction(self.act_export_excel)
         bar.addSeparator()
@@ -398,8 +973,12 @@ class MainWindow(QMainWindow):
     def _build_statusbar(self) -> None:
         bar = self.statusBar()
         self.lbl_summary = QLabel("", self)
-        self.lbl_conflict = QLabel("", self)
+        # 冲突数做成可点的：点一下直接打开底部「冲突」页，省得去菜单里找
+        self.lbl_conflict = _StatusLink("", self)
         self.lbl_conflict.setObjectName("StatusWarn")
+        self.lbl_conflict.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lbl_conflict.setToolTip("点一下看是哪些座位冲突（底部面板）")
+        self.lbl_conflict.clicked.connect(lambda: self.show_bottom(0))
         # 自动保存失败要一直挂着，不能用会消失的 toast（见 _autosave）
         self.lbl_autosave = QLabel("", self)
         self.lbl_autosave.setObjectName("StatusWarn")
@@ -458,10 +1037,25 @@ class MainWindow(QMainWindow):
         self.lbl_summary.setText(text)
         if self._conflicts:
             first = next(iter(self._conflicts.values()))
-            self.lbl_conflict.setText("⚠ %d 处冲突：%s" % (len(self._conflicts), first[:48]))
+            self.lbl_conflict.setText("有 %d 处冲突：%s" % (len(self._conflicts), first[:48]))
         else:
             self.lbl_conflict.setText("")
+        self._update_view_meta()
         self.setWindowTitle(self._window_title())
+
+    def _update_view_meta(self) -> None:
+        """视图头上的教室摘要：「3 组 × 7 排 · 42 个座位 · 已排 40 人」。
+
+        窄窗里这行会被自适应收起（它撑宽度），所以同一句话也挂在悬停提示上。
+        """
+        layout = self.project.layout
+        cols = layout.groups[0].cols if layout.groups else 0
+        assigned = len([v for v in self.project.assignment.values() if v])
+        text = "%d 组 × %d 排 × %d 列 · %d 个座位 · 已排 %d / %d 人" % (
+            layout.group_count, layout.max_rows, cols,
+            layout.seat_count(), assigned, len(self.project.students))
+        self.lbl_view_meta.setText(text)
+        self.lbl_view_meta.setToolTip("当前教室：" + text)
 
     def _update_history_actions(self) -> None:
         can_undo = self.history.can_undo
@@ -567,11 +1161,12 @@ class MainWindow(QMainWindow):
                 self._conflicts.pop(key, None)
             self._conflicts.update(mapping)
         self.grid.set_conflicts(self._conflicts)
+        self._refresh_conflict_panel()
         self._update_status()
 
     def _conflict_message(self) -> str:
         if not self._conflicts:
-            return "当前方案没有硬约束冲突 ✅"
+            return "当前方案满足全部「必须满足」要求"
         return "当前方案有 %d 处硬约束冲突：\n\n%s" % (
             len(self._conflicts),
             describe_violations(self._engine().check_hard(self.project.assignment), 8),
@@ -1256,6 +1851,7 @@ class MainWindow(QMainWindow):
         self.toast("排位完成：软约束得分 %.1f，硬约束违反 %d 条" % (solution.soft_score, solution.hard_count))
 
     def show_report(self) -> None:
+        """打开底部「排位结果」页（排完位也会自动开到这里）。"""
         solution = self._last_solution
         if solution is None:
             engine = self._engine()
@@ -1269,20 +1865,61 @@ class MainWindow(QMainWindow):
                 hard_violations=engine.check_hard(self.project.assignment),
                 rule_scores=evaluation.rule_scores,
             )
-        from .dialogs.conflict_report_dialog import ConflictReportDialog
+        self._fill_result_panel(solution)
+        self.show_bottom(1)
 
-        ConflictReportDialog(solution, self.project, self).exec()
+    def _on_theme_toggled(self, dark: bool) -> None:
+        """黑夜 / 白天切换：重装调色板与 QSS，联动标题栏并记住选择。"""
+        theme.apply_theme(QApplication.instance(), dark=dark)
+        QSettings(config.ORG_NAME, config.APP_ID).setValue(
+            config.SK_THEME, "dark" if dark else "light"
+        )
+        theme.apply_dark_titlebar(self, dark)
+        # 明暗键的图标跟着换成「点一下会切到的那一边」
+        self.activity_bar.set_theme_icon(dark)
+        self._recolor_action_icons(dark)
+        self.grid._apply_rubber_theme()   # 框选橡皮筋跟随主题色
 
-    def show_ai_rule_dialog(self) -> None:
-        """AI 大白话排位：对话框产出规则草稿，这里落库并按需接着排位。"""
-        from .dialogs.ai_rule_dialog import AIRuleDialog
+    def _recolor_action_icons(self, dark: bool) -> None:
+        """工具栏 / 菜单图标按新主题重新着色（SVG 描边色写死在文件里）。"""
+        icon_color(dark)          # 先让 icon_loader 认下当前主题（缓存按颜色区分）
+        for act in self.findChildren(QAction):
+            name = act.property("icon_name")
+            if name:
+                act.setIcon(action_icon(name))
 
-        dialog = AIRuleDialog(self.project, self)
-        dialog.exec()
-        if not dialog.result_rules:
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt 命名
+        # 浮动的程序内窗口（停靠面板拖出后）靠近主窗口边缘 / 角落时磁性贴靠
+        if event.type() == QEvent.Type.Move and isinstance(obj, QDockWidget):
+            if obj.isFloating():
+                self._snap_floating_dock(obj)
+        return super().eventFilter(obj, event)
+
+    def _snap_floating_dock(self, dock: QDockWidget) -> None:
+        frame = dock.frameGeometry()
+        target, _edge = motion.compute_dock_snap_target(frame, self.frameGeometry())
+        if target is None or target == frame.topLeft():
             return
+        if motion.reduced_motion():
+            dock.move(target)
+            return
+        slide = QPropertyAnimation(dock, b"pos", dock)
+        slide.setDuration(motion.DUR_SNAP)
+        slide.setEasingCurve(motion.ease_in_out())
+        slide.setStartValue(frame.topLeft())
+        slide.setEndValue(target)
+        slide.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def show_ai_panel(self) -> None:
+        """打开并聚焦「AI 助手」停靠窗口（工具栏 / 菜单 / 规则面板的统一入口）。"""
+        self.ai_dock.show()
+        self.ai_dock.raise_()
+        self.ai_panel.setFocus()
+
+    def _on_ai_rules_ready(self, rules: list, solve_after: bool) -> None:
+        """AI 面板交来的规则草稿：落库、刷新，按需接着自动排位。"""
         added = 0
-        for rule in dialog.result_rules:
+        for rule in rules:
             if self.project.add_rule(rule):
                 added += 1
         if added == 0:
@@ -1290,7 +1927,7 @@ class MainWindow(QMainWindow):
             return
         self._on_rules_changed()
         self.toast("已添加 %d 条 AI 规则" % added)
-        if dialog.solve_after:
+        if solve_after:
             self.solve()
 
     def _on_rules_changed(self) -> None:
@@ -1427,6 +2064,7 @@ class MainWindow(QMainWindow):
             self.grid.set_show_group_title(bool(layout.show_group_title))
             self.grid.set_card_size(layout.card_size)
             self.grid.set_selection_visible(self.act_show_selection.isChecked())
+            self._sync_editor_header()
         finally:
             self._syncing_view = False
 
@@ -1436,7 +2074,7 @@ class MainWindow(QMainWindow):
             return
         self._forget_last_project()
         self._rebind_project(new_project())
-        self.toast("已新建项目：默认 3 组 × 6 行 × 2 列")
+        self.toast("已新建项目：默认 3 组 × 6 排 × 2 列")
 
     def open_project(self, path: str = "") -> None:
         if not path:
@@ -1500,6 +2138,7 @@ class MainWindow(QMainWindow):
         self.rule_panel.set_project(self.project)
         self.selection_panel.set_project(self.project)
         self.rotation_panel.set_project(self.project)
+        self.ai_panel.set_project(self.project)
         self._refresh_all()
         self._sync_view_actions()
         self.grid.set_locked_seats(self._locked_seats)
@@ -1604,9 +2243,8 @@ class MainWindow(QMainWindow):
         from .dialogs.onboarding_dialog import OnboardingDialog
 
         def go_rules() -> None:
-            self.right_dock.show()
-            self.right_tabs.setCurrentIndex(0)
-            self.right_dock.raise_()
+            self.show_sidebar_page("rules")
+            self.side_dock.raise_()
 
         steps = (
             ("设置教室布局",
@@ -1758,13 +2396,7 @@ class MainWindow(QMainWindow):
         box.exec()
 
     def show_about(self) -> None:
-        QMessageBox.about(
-            self, "关于 %s" % config.APP_NAME,
-            "<b>%s</b> v%s<br><br>"
-            "面向中小学教师的单机教室座位编排工具。<br>"
-            "全部数据保存在本地项目文件（.seatproj）中，无网络依赖、无账号体系。<br><br>"
-            "技术栈：Python + PyQt6 + openpyxl" % (config.APP_NAME, config.VERSION),
-        )
+        QMessageBox.about(self, "关于 %s" % config.APP_NAME, about_text())
 
     # 杂项
     def _confirm(self, text: str, title: str = "确认") -> bool:

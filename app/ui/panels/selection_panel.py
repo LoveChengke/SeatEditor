@@ -59,10 +59,7 @@ class SelectionPanel(ProjectPanel):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        title = QLabel("常用区域")
-        title.setObjectName("PanelTitle")
-        root.addWidget(title)
-
+        # 不再重复画标题：侧边栏页面头已经写着「常用区域」
         self._hint_label = QLabel("座位表当前选中 0 个座位")
         self._hint_label.setObjectName("Hint")
         self._hint_label.setWordWrap(True)

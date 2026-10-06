@@ -62,10 +62,7 @@ class RotationPanel(ProjectPanel):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        title = QLabel("自动轮换")
-        title.setObjectName("PanelTitle")
-        root.addWidget(title)
-
+        # 不再重复画标题：侧边栏页面头已经写着「定期换座」
         intro = QLabel("进阶功能：按周整体换座。只想排一次座的话用不到这一页。")
         intro.setObjectName("Hint")
         intro.setWordWrap(True)
@@ -319,10 +316,10 @@ class RotationPanel(ProjectPanel):
         lines = [plan.description or "轮换方案"]
         lines.append("影响 %d 个座位 · 共 %d 处变动" % (plan.moved, len(plan.changes)))
         if plan.warnings:
-            lines.extend("⚠ %s" % warning for warning in plan.warnings)
+            lines.extend("注意：%s" % warning for warning in plan.warnings)
             self._set_info("\n".join(lines), error=True)
         else:
-            lines.append("✓ 未发现硬约束冲突")
+            lines.append("未发现硬约束冲突")
             self._set_info("\n".join(lines))
         self.preview_ready.emit(plan)
 

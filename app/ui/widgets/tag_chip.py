@@ -36,7 +36,7 @@ class TagChip(QFrame):
         layout.setSpacing(4)
         layout.addWidget(self._label)
         if closable:
-            close = QLabel("✕", self)
+            close = QLabel("×", self)
             close.setStyleSheet("color: %s; background: transparent;" % self._text_color())
             close.setCursor(Qt.CursorShape.PointingHandCursor)
             layout.addWidget(close)
